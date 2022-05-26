@@ -7,6 +7,33 @@
 
 import UIKit
 
+// - FPS graph
+//
+// - File manager
+// * Browse all file locations
+// * See all saved file bookmarks an app has active
+//
+// - NSUserDefaults viewer
+// * See all app set values
+// * Erase all app set values
+// * See all values
+// * See a specific Suite name (specified database name)
+//
+// - View file type database info
+//
+// - App UI viewer/editor
+//
+// - SQLite viewer
+//
+// - iCloud data viewer?
+// - Check permissions state
+//
+// - List running threads/queues?
+//
+// - Multi-threaded log viewer
+//
+
+
 @main
 class AppDelegate: UIResponder, UIApplicationDelegate {
 
