@@ -16,9 +16,11 @@ public enum InfoEndpoints {
 
 	// MARK: - Info
 
-	/// GET /info - Get app, device, and screen information
 	private static func registerInfo(with handler: RequestHandler) {
-		handler["/info"] = { _ in
+		handler.register(
+			"/info",
+			description: "Get app, device, and screen information"
+		) { _ in
 			#if canImport(UIKit)
 				let device: UIDevice = .current
 				let bundle: Bundle = .main
@@ -64,9 +66,11 @@ public enum InfoEndpoints {
 
 	// MARK: - Screenshot
 
-	/// GET /screenshot - Capture current screen
 	private static func registerScreenshot(with handler: RequestHandler) {
-		handler["/screenshot"] = { _ in
+		handler.register(
+			"/screenshot",
+			description: "Capture current screen"
+		) { _ in
 			// TODO: Implement screenshot capture
 			return .json([
 				"status": "pending",
@@ -77,9 +81,11 @@ public enum InfoEndpoints {
 
 	// MARK: - View Hierarchy
 
-	/// GET /hierarchy - Get view hierarchy
 	private static func registerHierarchy(with handler: RequestHandler) {
-		handler["/hierarchy"] = { _ in
+		handler.register(
+			"/hierarchy",
+			description: "Get view hierarchy"
+		) { _ in
 			// TODO: Implement view hierarchy inspection
 			return .json([
 				"status": "pending",

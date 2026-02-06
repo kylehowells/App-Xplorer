@@ -4,26 +4,31 @@ import Foundation
 
 /// File system browsing endpoints
 public enum FilesEndpoints {
-	/// Register file endpoints with the request handler
-	public static func register(with handler: RequestHandler) {
-		self.registerList(with: handler)
-		self.registerMetadata(with: handler)
-		self.registerRead(with: handler)
-		self.registerHead(with: handler)
-		self.registerTail(with: handler)
+	/// Create a router for file endpoints
+	public static func createRouter() -> RequestHandler {
+		let router: RequestHandler = .init(description: "File system browsing")
+
+		// Register index for this sub-router
+		router.register("/", description: "List available file endpoints") { request in
+			return .json(router.routerInfo(deep: true))
+		}
+
+		self.registerList(with: router)
+		self.registerMetadata(with: router)
+		self.registerRead(with: router)
+		self.registerHead(with: router)
+		self.registerTail(with: router)
+
+		return router
 	}
 
 	// MARK: - List
 
-	/// GET /files/list - List directory contents with sorting and pagination
-	/// Query params:
-	///   - path: Directory path (default: app home directory)
-	///   - sort: name, size, modified (default: name)
-	///   - order: asc, desc (default: asc)
-	///   - limit: Max items to return (default: unlimited)
-	///   - offset: Skip first N items (default: 0)
 	private static func registerList(with handler: RequestHandler) {
-		handler["/files/list"] = { request in
+		handler.register(
+			"/list",
+			description: "List directory contents with sorting and pagination"
+		) { request in
 			let path: String = request.queryParams["path"] ?? NSHomeDirectory()
 			let sortBy: String = request.queryParams["sort"] ?? "name"
 			let order: String = request.queryParams["order"] ?? "asc"
@@ -115,11 +120,11 @@ public enum FilesEndpoints {
 
 	// MARK: - Metadata
 
-	/// GET /files/metadata - Get file or directory metadata
-	/// Query params:
-	///   - path: File or directory path (required)
 	private static func registerMetadata(with handler: RequestHandler) {
-		handler["/files/metadata"] = { request in
+		handler.register(
+			"/metadata",
+			description: "Get file or directory metadata"
+		) { request in
 			guard let path: String = request.queryParams["path"] else {
 				return .error("Missing required parameter: path", status: .badRequest)
 			}
@@ -170,12 +175,11 @@ public enum FilesEndpoints {
 
 	// MARK: - Read
 
-	/// GET /files/read - Read file contents
-	/// Query params:
-	///   - path: File path (required)
-	///   - encoding: text encoding (utf8, ascii, etc.) - if omitted, returns binary
 	private static func registerRead(with handler: RequestHandler) {
-		handler["/files/read"] = { request in
+		handler.register(
+			"/read",
+			description: "Read file contents (binary or with encoding)"
+		) { request in
 			guard let path: String = request.queryParams["path"] else {
 				return .error("Missing required parameter: path", status: .badRequest)
 			}
@@ -249,13 +253,11 @@ public enum FilesEndpoints {
 
 	// MARK: - Head
 
-	/// GET /files/head - Read first N lines of a text file
-	/// Query params:
-	///   - path: File path (required)
-	///   - lines: Number of lines (default: 10)
-	///   - encoding: text encoding (default: utf8)
 	private static func registerHead(with handler: RequestHandler) {
-		handler["/files/head"] = { request in
+		handler.register(
+			"/head",
+			description: "Read first N lines of a text file"
+		) { request in
 			guard let path: String = request.queryParams["path"] else {
 				return .error("Missing required parameter: path", status: .badRequest)
 			}
@@ -300,13 +302,11 @@ public enum FilesEndpoints {
 
 	// MARK: - Tail
 
-	/// GET /files/tail - Read last N lines of a text file
-	/// Query params:
-	///   - path: File path (required)
-	///   - lines: Number of lines (default: 10)
-	///   - encoding: text encoding (default: utf8)
 	private static func registerTail(with handler: RequestHandler) {
-		handler["/files/tail"] = { request in
+		handler.register(
+			"/tail",
+			description: "Read last N lines of a text file"
+		) { request in
 			guard let path: String = request.queryParams["path"] else {
 				return .error("Missing required parameter: path", status: .badRequest)
 			}

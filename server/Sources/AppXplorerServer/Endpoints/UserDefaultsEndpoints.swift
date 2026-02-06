@@ -11,12 +11,11 @@ public enum UserDefaultsEndpoints {
 
 	// MARK: - UserDefaults
 
-	/// GET /userdefaults - View UserDefaults contents
-	/// Query params:
-	///   - suite: UserDefaults suite name (optional, defaults to standard)
-	///   - filterSystem: "true" to filter out Apple system keys (optional)
 	private static func registerUserDefaults(with handler: RequestHandler) {
-		handler["/userdefaults"] = { request in
+		handler.register(
+			"/userdefaults",
+			description: "View UserDefaults contents"
+		) { request in
 			let suiteName: String? = request.queryParams["suite"]
 			let defaults: UserDefaults
 
