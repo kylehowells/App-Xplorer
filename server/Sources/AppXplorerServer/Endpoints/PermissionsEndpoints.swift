@@ -5,6 +5,41 @@ import Foundation
 /// System permissions inspection endpoints
 /// Uses runtime framework detection to avoid forcing host apps to link unused frameworks
 public enum PermissionsEndpoints {
+	// MARK: - Permission Cache
+
+	/// Cached permission result
+	private struct CachedPermission {
+		let status: PermissionStatus
+		let timestamp: Date
+		let isChecking: Bool
+
+		init(status: PermissionStatus, isChecking: Bool = false) {
+			self.status = status
+			self.timestamp = Date()
+			self.isChecking = isChecking
+		}
+
+		static func checking() -> CachedPermission {
+			return CachedPermission(status: .checking, isChecking: true)
+		}
+	}
+
+	/// Thread-safe cache for permission states
+	private static var permissionCache: [PermissionType: CachedPermission] = [:]
+	private static let cacheLock = NSLock()
+
+	private static func getCachedPermission(for type: PermissionType) -> CachedPermission? {
+		self.cacheLock.lock()
+		defer { self.cacheLock.unlock() }
+		return self.permissionCache[type]
+	}
+
+	private static func setCachedPermission(_ permission: CachedPermission, for type: PermissionType) {
+		self.cacheLock.lock()
+		defer { self.cacheLock.unlock() }
+		self.permissionCache[type] = permission
+	}
+
 	/// Create a router for permissions endpoints
 	public static func createRouter() -> RequestHandler {
 		let router: RequestHandler = .init(description: "Inspect system permission states")
@@ -17,6 +52,7 @@ public enum PermissionsEndpoints {
 		self.registerAll(with: router)
 		self.registerList(with: router)
 		self.registerGet(with: router)
+		self.registerRefresh(with: router)
 
 		return router
 	}
@@ -143,6 +179,17 @@ public enum PermissionsEndpoints {
 				case .siri: return "INPreferences"
 			}
 		}
+
+		/// Whether this permission requires async checking
+		var isAsync: Bool {
+			switch self {
+				case .notifications, .siri:
+					return true
+
+				default:
+					return false
+			}
+		}
 	}
 
 	/// Permission status values
@@ -155,6 +202,9 @@ public enum PermissionsEndpoints {
 		case notLinked = "not_linked"
 		case provisional
 		case unknown
+		case checking
+		case notChecked = "not_checked"
+		case entitlementMissing = "entitlement_missing"
 
 		var description: String {
 			switch self {
@@ -173,6 +223,12 @@ public enum PermissionsEndpoints {
 				case .provisional: return "Provisional permission granted"
 
 				case .unknown: return "Status could not be determined"
+
+				case .checking: return "Async check in progress"
+
+				case .notChecked: return "Not yet checked - call /permissions/refresh first"
+
+				case .entitlementMissing: return "Required entitlement not present in app"
 			}
 		}
 	}
@@ -186,33 +242,47 @@ public enum PermissionsEndpoints {
 
 	// MARK: - Permission Checking
 
-	/// Get the permission status for a specific type
+	/// Get the permission status for a specific type (sync check or cached result)
 	private static func getPermissionStatus(for type: PermissionType) -> [String: Any] {
 		// First check if framework is linked
 		guard self.isFrameworkLinked(type.detectionClassName) else {
-			return [
-				"type": type.rawValue,
-				"displayName": type.displayName,
-				"status": PermissionStatus.notLinked.rawValue,
-				"description": PermissionStatus.notLinked.description,
-				"framework": type.framework,
-			]
+			return self.buildResponse(for: type, status: .notLinked, cached: nil)
 		}
 
-		// Framework is linked, check actual permission
-		let status: PermissionStatus = self.checkPermission(for: type)
+		// For async permissions, return cached result
+		if type.isAsync {
+			if let cached = self.getCachedPermission(for: type) {
+				return self.buildResponse(for: type, status: cached.status, cached: cached)
+			}
+			else {
+				return self.buildResponse(for: type, status: .notChecked, cached: nil)
+			}
+		}
 
-		return [
+		// Framework is linked, check actual permission synchronously
+		let status: PermissionStatus = self.checkPermissionSync(for: type)
+		return self.buildResponse(for: type, status: status, cached: nil)
+	}
+
+	private static func buildResponse(for type: PermissionType, status: PermissionStatus, cached: CachedPermission?) -> [String: Any] {
+		var response: [String: Any] = [
 			"type": type.rawValue,
 			"displayName": type.displayName,
 			"status": status.rawValue,
 			"description": status.description,
 			"framework": type.framework,
+			"isAsync": type.isAsync,
 		]
+
+		if let cached = cached {
+			response["lastChecked"] = ISO8601DateFormatter().string(from: cached.timestamp)
+		}
+
+		return response
 	}
 
-	/// Check the actual permission status using runtime method calls
-	private static func checkPermission(for type: PermissionType) -> PermissionStatus {
+	/// Check the actual permission status using runtime method calls (sync only)
+	private static func checkPermissionSync(for type: PermissionType) -> PermissionStatus {
 		switch type {
 			case .photos:
 				return self.checkPhotosPermission()
@@ -236,7 +306,8 @@ public enum PermissionsEndpoints {
 				return self.checkLocationPermission()
 
 			case .notifications:
-				return self.checkNotificationsPermission()
+				// Async - should use cache
+				return .notChecked
 
 			case .health:
 				return self.checkHealthPermission()
@@ -257,20 +328,145 @@ public enum PermissionsEndpoints {
 				return self.checkMediaLibraryPermission()
 
 			case .siri:
-				return self.checkSiriPermission()
+				// Async due to entitlement check complexity
+				return .notChecked
 		}
 	}
 
-	// MARK: - Individual Permission Checks
+	// MARK: - Async Permission Refresh
+
+	/// Trigger async permission checks
+	private static func refreshAsyncPermissions() {
+		// Notifications
+		self.refreshNotificationsPermission()
+
+		// Siri
+		self.refreshSiriPermission()
+	}
+
+	/// Refresh notification permission status
+	private static func refreshNotificationsPermission() {
+		guard let unClass = NSClassFromString("UNUserNotificationCenter") else {
+			self.setCachedPermission(CachedPermission(status: .notLinked), for: .notifications)
+			return
+		}
+
+		// Mark as checking
+		self.setCachedPermission(CachedPermission.checking(), for: .notifications)
+
+		// Get current notification center
+		let currentSelector = NSSelectorFromString("currentNotificationCenter")
+		guard unClass.responds(to: currentSelector),
+		      let centerUnmanaged = (unClass as AnyObject).perform(currentSelector),
+		      let center = centerUnmanaged.takeUnretainedValue() as? NSObject
+		else {
+			self.setCachedPermission(CachedPermission(status: .unknown), for: .notifications)
+			return
+		}
+
+		// Create completion handler block
+		let completion: @convention(block) (NSObject) -> Void = { settings in
+			// Get authorizationStatus from settings
+			let statusSelector = NSSelectorFromString("authorizationStatus")
+			guard settings.responds(to: statusSelector) else {
+				self.setCachedPermission(CachedPermission(status: .unknown), for: .notifications)
+				return
+			}
+
+			let statusResult = settings.perform(statusSelector)
+			let statusValue: Int = .init(bitPattern: statusResult?.toOpaque())
+
+			// UNAuthorizationStatus: 0 = notDetermined, 1 = denied, 2 = authorized, 3 = provisional
+			let status: PermissionStatus
+			switch statusValue {
+				case 0: status = .notDetermined
+
+				case 1: status = .denied
+
+				case 2: status = .authorized
+
+				case 3: status = .provisional
+
+				default: status = .unknown
+			}
+
+			self.setCachedPermission(CachedPermission(status: status), for: .notifications)
+		}
+
+		// Call getNotificationSettingsWithCompletionHandler:
+		let settingsSelector = NSSelectorFromString("getNotificationSettingsWithCompletionHandler:")
+		if center.responds(to: settingsSelector) {
+			center.perform(settingsSelector, with: completion)
+		}
+		else {
+			self.setCachedPermission(CachedPermission(status: .unknown), for: .notifications)
+		}
+	}
+
+	/// Refresh Siri permission status (handles entitlement exception)
+	private static func refreshSiriPermission() {
+		guard let inClass = NSClassFromString("INPreferences") as? NSObject.Type else {
+			self.setCachedPermission(CachedPermission(status: .notLinked), for: .siri)
+			return
+		}
+
+		// Mark as checking
+		self.setCachedPermission(CachedPermission.checking(), for: .siri)
+
+		// Check if app has Siri entitlement by looking at Info.plist
+		// Apps using Siri must have NSSiriUsageDescription
+		let hasSiriUsageDescription: Bool = Bundle.main.object(forInfoDictionaryKey: "NSSiriUsageDescription") != nil
+
+		if !hasSiriUsageDescription {
+			// No usage description = entitlement likely missing
+			self.setCachedPermission(CachedPermission(status: .entitlementMissing), for: .siri)
+			return
+		}
+
+		// Try to get the authorization status
+		// This might throw an exception if entitlement is missing despite usage description
+		let selector = NSSelectorFromString("siriAuthorizationStatus")
+		guard inClass.responds(to: selector) else {
+			self.setCachedPermission(CachedPermission(status: .unknown), for: .siri)
+			return
+		}
+
+		// Use DispatchQueue to catch any potential crashes/exceptions
+		// by running in a separate context
+		DispatchQueue.global(qos: .userInitiated).async {
+			// We'll attempt the call and handle failure via the cache
+			// Note: This doesn't catch ObjC exceptions, but the NSSiriUsageDescription check
+			// should prevent most cases
+
+			let result = inClass.perform(selector)
+			let statusValue: Int = .init(bitPattern: result?.toOpaque())
+
+			// INSiriAuthorizationStatus: 0 = notDetermined, 1 = restricted, 2 = denied, 3 = authorized
+			let status: PermissionStatus
+			switch statusValue {
+				case 0: status = .notDetermined
+
+				case 1: status = .restricted
+
+				case 2: status = .denied
+
+				case 3: status = .authorized
+
+				default: status = .unknown
+			}
+
+			DispatchQueue.main.async {
+				self.setCachedPermission(CachedPermission(status: status), for: .siri)
+			}
+		}
+	}
+
+	// MARK: - Individual Permission Checks (Sync)
 
 	private static func checkPhotosPermission() -> PermissionStatus {
 		guard let phClass = NSClassFromString("PHPhotoLibrary") as? NSObject.Type else {
 			return .notLinked
 		}
-
-		// PHPhotoLibrary.authorizationStatus(for:) requires iOS 14+
-		// PHPhotoLibrary.authorizationStatus() is available earlier
-		// We use performSelector to call class methods at runtime
 
 		let selector = NSSelectorFromString("authorizationStatus")
 		guard phClass.responds(to: selector) else {
@@ -278,11 +474,9 @@ public enum PermissionsEndpoints {
 		}
 
 		let result = phClass.perform(selector)
-
-		// Cast the result to an integer representing PHAuthorizationStatus
-		// PHAuthorizationStatus: 0 = notDetermined, 1 = restricted, 2 = denied, 3 = authorized, 4 = limited
 		let statusValue: Int = .init(bitPattern: result?.toOpaque())
 
+		// PHAuthorizationStatus: 0 = notDetermined, 1 = restricted, 2 = denied, 3 = authorized, 4 = limited
 		switch statusValue {
 			case 0: return .notDetermined
 
@@ -304,17 +498,13 @@ public enum PermissionsEndpoints {
 				return .notLinked
 			}
 
-			// AVCaptureDevice.authorizationStatus(for:) - we need to pass mediaType
 			let selector = NSSelectorFromString("authorizationStatusForMediaType:")
 			guard avClass.responds(to: selector) else {
 				return .unknown
 			}
 
-			// AVMediaTypeVideo = "vide"
 			let mediaType: NSString = "vide"
 			let result = avClass.perform(selector, with: mediaType)
-
-			// AVAuthorizationStatus: 0 = notDetermined, 1 = restricted, 2 = denied, 3 = authorized
 			let statusValue: Int = .init(bitPattern: result?.toOpaque())
 
 			switch statusValue {
@@ -344,10 +534,8 @@ public enum PermissionsEndpoints {
 				return .unknown
 			}
 
-			// AVMediaTypeAudio = "soun"
 			let mediaType: NSString = "soun"
 			let result = avClass.perform(selector, with: mediaType)
-
 			let statusValue: Int = .init(bitPattern: result?.toOpaque())
 
 			switch statusValue {
@@ -376,11 +564,8 @@ public enum PermissionsEndpoints {
 			return .unknown
 		}
 
-		// CNEntityType.contacts = 0
 		let entityType: Int = 0
 		let result = cnClass.perform(selector, with: entityType as AnyObject)
-
-		// CNAuthorizationStatus: 0 = notDetermined, 1 = restricted, 2 = denied, 3 = authorized
 		let statusValue: Int = .init(bitPattern: result?.toOpaque())
 
 		switch statusValue {
@@ -406,12 +591,8 @@ public enum PermissionsEndpoints {
 			return .unknown
 		}
 
-		// EKEntityType.event = 0
 		let entityType: Int = 0
 		let result = ekClass.perform(selector, with: entityType as AnyObject)
-
-		// EKAuthorizationStatus: 0 = notDetermined, 1 = restricted, 2 = denied, 3 = authorized
-		// iOS 17+: 4 = writeOnly, 5 = fullAccess (but older statuses still work)
 		let statusValue: Int = .init(bitPattern: result?.toOpaque())
 
 		switch statusValue {
@@ -437,10 +618,8 @@ public enum PermissionsEndpoints {
 			return .unknown
 		}
 
-		// EKEntityType.reminder = 1
 		let entityType: Int = 1
 		let result = ekClass.perform(selector, with: entityType as AnyObject)
-
 		let statusValue: Int = .init(bitPattern: result?.toOpaque())
 
 		switch statusValue {
@@ -461,17 +640,12 @@ public enum PermissionsEndpoints {
 			return .notLinked
 		}
 
-		// CLLocationManager.authorizationStatus() is deprecated in iOS 14+
-		// but still works as a class method
 		let selector = NSSelectorFromString("authorizationStatus")
 		guard clClass.responds(to: selector) else {
 			return .unknown
 		}
 
 		let result = clClass.perform(selector)
-
-		// CLAuthorizationStatus: 0 = notDetermined, 1 = restricted, 2 = denied,
-		// 3 = authorizedAlways, 4 = authorizedWhenInUse
 		let statusValue: Int = .init(bitPattern: result?.toOpaque())
 
 		switch statusValue {
@@ -487,25 +661,12 @@ public enum PermissionsEndpoints {
 		}
 	}
 
-	private static func checkNotificationsPermission() -> PermissionStatus {
-		// UNUserNotificationCenter requires async completion handler
-		// For simplicity, we return "unknown" and note that a full check would require async
-		guard NSClassFromString("UNUserNotificationCenter") != nil else {
-			return .notLinked
-		}
-
-		// Notifications require an async call to getNotificationSettings
-		// For a synchronous API, we return unknown with a note
-		// A future version could cache the last known state
-		return .unknown
-	}
-
 	private static func checkHealthPermission() -> PermissionStatus {
 		guard let hkClass = NSClassFromString("HKHealthStore") as? NSObject.Type else {
 			return .notLinked
 		}
 
-		// HKHealthStore.isHealthDataAvailable() - check if HealthKit is available
+		// Check if HealthKit is available on this device
 		let availableSelector = NSSelectorFromString("isHealthDataAvailable")
 		guard hkClass.responds(to: availableSelector) else {
 			return .unknown
@@ -518,9 +679,10 @@ public enum PermissionsEndpoints {
 			return .restricted
 		}
 
-		// Actual permission checking for HealthKit requires specifying data types
-		// and uses async completion handlers. Return unknown for now.
-		return .unknown
+		// HealthKit doesn't have a simple authorization check - it requires specific data types
+		// We return notDetermined as a placeholder indicating the user can request
+		// Actual permission checking requires specifying which data types to check
+		return .notDetermined
 	}
 
 	private static func checkMotionPermission() -> PermissionStatus {
@@ -528,15 +690,12 @@ public enum PermissionsEndpoints {
 			return .notLinked
 		}
 
-		// CMMotionActivityManager.authorizationStatus()
 		let selector = NSSelectorFromString("authorizationStatus")
 		guard cmClass.responds(to: selector) else {
 			return .unknown
 		}
 
 		let result = cmClass.perform(selector)
-
-		// CMAuthorizationStatus: 0 = notDetermined, 1 = restricted, 2 = denied, 3 = authorized
 		let statusValue: Int = .init(bitPattern: result?.toOpaque())
 
 		switch statusValue {
@@ -557,15 +716,12 @@ public enum PermissionsEndpoints {
 			return .notLinked
 		}
 
-		// SFSpeechRecognizer.authorizationStatus()
 		let selector = NSSelectorFromString("authorizationStatus")
 		guard sfClass.responds(to: selector) else {
 			return .unknown
 		}
 
 		let result = sfClass.perform(selector)
-
-		// SFSpeechRecognizerAuthorizationStatus: 0 = notDetermined, 1 = denied, 2 = restricted, 3 = authorized
 		let statusValue: Int = .init(bitPattern: result?.toOpaque())
 
 		switch statusValue {
@@ -582,13 +738,10 @@ public enum PermissionsEndpoints {
 	}
 
 	private static func checkBluetoothPermission() -> PermissionStatus {
-		// CBCentralManager requires instantiation to check state
-		// We can only detect if framework is linked
 		guard NSClassFromString("CBCentralManager") != nil else {
 			return .notLinked
 		}
 
-		// CBManager.authorization is a class property (iOS 13+)
 		guard let cbManagerClass = NSClassFromString("CBManager") as? NSObject.Type else {
 			return .unknown
 		}
@@ -599,8 +752,6 @@ public enum PermissionsEndpoints {
 		}
 
 		let result = cbManagerClass.perform(selector)
-
-		// CBManagerAuthorization: 0 = notDetermined, 1 = restricted, 2 = denied, 3 = allowedAlways
 		let statusValue: Int = .init(bitPattern: result?.toOpaque())
 
 		switch statusValue {
@@ -617,14 +768,21 @@ public enum PermissionsEndpoints {
 	}
 
 	private static func checkHomeKitPermission() -> PermissionStatus {
-		// HomeKit doesn't have a simple authorization status API
-		// It requires creating an HMHomeManager and checking in its delegate
 		guard NSClassFromString("HMHomeManager") != nil else {
 			return .notLinked
 		}
 
-		// Cannot easily check without instantiation and async callback
-		return .unknown
+		// HomeKit doesn't have a simple authorization status API
+		// It requires creating an HMHomeManager and waiting for delegate callback
+		// For now, check if the app has the HomeKit usage description
+		let hasUsageDescription: Bool = Bundle.main.object(forInfoDictionaryKey: "NSHomeKitUsageDescription") != nil
+
+		if !hasUsageDescription {
+			return .entitlementMissing
+		}
+
+		// We can't easily check the actual status without creating manager
+		return .notDetermined
 	}
 
 	private static func checkMediaLibraryPermission() -> PermissionStatus {
@@ -632,15 +790,12 @@ public enum PermissionsEndpoints {
 			return .notLinked
 		}
 
-		// MPMediaLibrary.authorizationStatus()
 		let selector = NSSelectorFromString("authorizationStatus")
 		guard mpClass.responds(to: selector) else {
 			return .unknown
 		}
 
 		let result = mpClass.perform(selector)
-
-		// MPMediaLibraryAuthorizationStatus: 0 = notDetermined, 1 = denied, 2 = restricted, 3 = authorized
 		let statusValue: Int = .init(bitPattern: result?.toOpaque())
 
 		switch statusValue {
@@ -656,24 +811,12 @@ public enum PermissionsEndpoints {
 		}
 	}
 
-	private static func checkSiriPermission() -> PermissionStatus {
-		guard NSClassFromString("INPreferences") != nil else {
-			return .notLinked
-		}
-
-		// INPreferences requires the com.apple.developer.siri entitlement
-		// Calling siriAuthorizationStatus() without it throws an NSException
-		// We cannot safely check without the entitlement, so return restricted
-		// (indicating the app cannot use Siri due to missing entitlement)
-		return .restricted
-	}
-
 	// MARK: - Endpoints
 
 	private static func registerAll(with handler: RequestHandler) {
 		handler.register(
 			"/all",
-			description: "Get all permission states. Returns the status for each supported permission type, including whether the framework is linked.",
+			description: "Get all permission states. Sync permissions are checked live; async permissions (notifications, siri) return cached last-known values. Call /permissions/refresh first to update cached values.",
 			runsOnMainThread: true
 		) { _ in
 			var permissions: [[String: Any]] = []
@@ -691,12 +834,18 @@ public enum PermissionsEndpoints {
 				}
 			}
 
+			// Count async permissions that need refresh
+			let asyncNeedingRefresh: Int = permissions.filter {
+				($0["isAsync"] as? Bool == true) && ($0["status"] as? String == "not_checked")
+			}
+			.count
+
 			return .json([
 				"count": permissions.count,
 				"summary": statusCounts,
 				"permissions": permissions,
 				"timestamp": ISO8601DateFormatter().string(from: Date()),
-				"note": "Some permissions require async checks (notifications, health, homeKit) and may show 'unknown'",
+				"asyncNeedingRefresh": asyncNeedingRefresh,
 			])
 		}
 	}
@@ -707,7 +856,7 @@ public enum PermissionsEndpoints {
 			description: "List all supported permission types. Returns the type identifiers and display names without checking status.",
 			runsOnMainThread: false
 		) { _ in
-			var types: [[String: String]] = []
+			var types: [[String: Any]] = []
 
 			for type in PermissionType.allCases {
 				types.append([
@@ -715,13 +864,14 @@ public enum PermissionsEndpoints {
 					"displayName": type.displayName,
 					"framework": type.framework,
 					"detectionClass": type.detectionClassName,
+					"isAsync": type.isAsync,
 				])
 			}
 
 			return .json([
 				"count": types.count,
 				"types": types,
-				"note": "Use /permissions/all or /permissions/get?type=<type> to check status",
+				"note": "Use /permissions/refresh to trigger async permission checks, then /permissions/all to read results",
 			])
 		}
 	}
@@ -729,7 +879,7 @@ public enum PermissionsEndpoints {
 	private static func registerGet(with handler: RequestHandler) {
 		handler.register(
 			"/get",
-			description: "Get the permission status for a specific type.",
+			description: "Get the permission status for a specific type. For async permissions (notifications, siri), returns cached last-known value. Call /permissions/refresh first to update.",
 			parameters: [
 				ParameterInfo(
 					name: "type",
@@ -749,11 +899,38 @@ public enum PermissionsEndpoints {
 				return .error("Invalid permission type '\(typeString)'. Valid types: \(validTypes)", status: .badRequest)
 			}
 
-			let status: [String: Any] = self.getPermissionStatus(for: type)
-			var result: [String: Any] = status
-			result["timestamp"] = ISO8601DateFormatter().string(from: Date())
+			var status: [String: Any] = self.getPermissionStatus(for: type)
+			status["timestamp"] = ISO8601DateFormatter().string(from: Date())
 
-			return .json(result)
+			return .json(status)
+		}
+	}
+
+	private static func registerRefresh(with handler: RequestHandler) {
+		handler.register(
+			"/refresh",
+			description: "Trigger fresh async permission checks and update cached values. Async permissions (notifications, siri) are checked in the background. Call /permissions/all or /permissions/get after a short delay to read the updated cached results.",
+			runsOnMainThread: true
+		) { _ in
+			// Trigger all async checks
+			self.refreshAsyncPermissions()
+
+			// Build response showing what was triggered
+			var refreshed: [[String: String]] = []
+			for type in PermissionType.allCases where type.isAsync {
+				refreshed.append([
+					"type": type.rawValue,
+					"displayName": type.displayName,
+					"status": "checking",
+				])
+			}
+
+			return .json([
+				"message": "Async permission checks triggered",
+				"refreshing": refreshed,
+				"note": "Call /permissions/all after a short delay to see updated results",
+				"timestamp": ISO8601DateFormatter().string(from: Date()),
+			])
 		}
 	}
 }

@@ -11,7 +11,8 @@ import Testing
 	#expect(router.registeredPaths.contains("/all"))
 	#expect(router.registeredPaths.contains("/list"))
 	#expect(router.registeredPaths.contains("/get"))
-	#expect(router.registeredPaths.count == 4)
+	#expect(router.registeredPaths.contains("/refresh"))
+	#expect(router.registeredPaths.count == 5)
 }
 
 @Test func testPermissionsRouterIndex() async throws {
@@ -210,8 +211,8 @@ import Testing
 	let router: RequestHandler = PermissionsEndpoints.createRouter()
 	let info = router.routerInfo(deep: true)
 
-	// 4 endpoints: /, /all, /list, /get
-	#expect(info.endpoints?.count == 4)
+	// 5 endpoints: /, /all, /list, /get, /refresh
+	#expect(info.endpoints?.count == 5)
 }
 
 @Test func testPermissionsGetEndpointParameters() async throws {
@@ -227,6 +228,52 @@ import Testing
 	#expect(typeParam != nil)
 	#expect(typeParam?.required == true)
 	#expect(typeParam?.examples?.isEmpty == false)
+}
+
+@Test func testPermissionsRefreshEndpoint() async throws {
+	let router: RequestHandler = PermissionsEndpoints.createRouter()
+
+	let response = router.handle(Request(path: "/refresh"))
+
+	#expect(response.status == .ok)
+	#expect(response.contentType == .json)
+
+	let decoded = try JSONSerialization.jsonObject(with: response.body) as? [String: Any]
+
+	#expect(decoded?["message"] != nil)
+	#expect(decoded?["refreshing"] != nil)
+	#expect(decoded?["timestamp"] != nil)
+
+	// Check refreshing array contains async permissions
+	if let refreshing = decoded?["refreshing"] as? [[String: Any]] {
+		// Should have at least notifications and siri as async
+		#expect(refreshing.count >= 2)
+
+		for perm in refreshing {
+			#expect(perm["type"] != nil)
+			#expect(perm["status"] as? String == "checking")
+		}
+	}
+}
+
+@Test func testPermissionsAllIncludesAsyncInfo() async throws {
+	let router: RequestHandler = PermissionsEndpoints.createRouter()
+
+	let response = router.handle(Request(path: "/all"))
+
+	#expect(response.status == .ok)
+
+	let decoded = try JSONSerialization.jsonObject(with: response.body) as? [String: Any]
+
+	// Should include async-related fields
+	#expect(decoded?["asyncNeedingRefresh"] != nil)
+
+	// Check permissions include isAsync field
+	if let permissions = decoded?["permissions"] as? [[String: Any]] {
+		for perm in permissions {
+			#expect(perm["isAsync"] != nil, "Missing isAsync field for permission")
+		}
+	}
 }
 
 // MARK: - Framework Detection Tests (macOS specific)
