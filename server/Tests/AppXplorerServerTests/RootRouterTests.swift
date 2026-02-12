@@ -21,6 +21,8 @@ import Testing
 	#expect(routerPaths.contains("/files"))
 	#expect(routerPaths.contains("/hierarchy"))
 	#expect(routerPaths.contains("/userdefaults"))
+	#expect(routerPaths.contains("/permissions"))
+	#expect(routerPaths.contains("/interact"))
 }
 
 @Test func testRootIndexDeepByDefault() async throws {

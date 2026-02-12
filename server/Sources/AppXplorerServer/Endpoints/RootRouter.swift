@@ -27,6 +27,9 @@ public enum RootRouter {
 
 		let permissionsRouter: RequestHandler = PermissionsEndpoints.createRouter()
 		handler.mount("/permissions", router: permissionsRouter)
+
+		let interactRouter: RequestHandler = InteractEndpoints.createRouter()
+		handler.mount("/interact", router: interactRouter)
 	}
 
 	// MARK: - Index
