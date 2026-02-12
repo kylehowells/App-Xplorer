@@ -76,14 +76,113 @@ Then query the API at `http://192.168.1.100:8080/`.
 
 ## Custom Endpoints
 
+Host apps can register custom endpoints using the same API that built-in endpoints use. Custom endpoints integrate seamlessly with API discovery.
+
+### Simple Registration
+
 ```swift
-// Add a custom endpoint
+// Quick endpoint using subscript syntax
 server["/api/custom"] = { request in
     let name = request.queryParams["name"] ?? "World"
     return .json(["message": "Hello, \(name)!"])
 }
 
 // Access at: http://device-ip:8080/api/custom?name=Kyle
+```
+
+### Full Registration with Metadata
+
+Register endpoints with descriptions and parameters that appear in API discovery:
+
+```swift
+server.register(
+    "/api/user",
+    description: "Get current user information",
+    parameters: [
+        ParameterInfo(
+            name: "include_avatar",
+            description: "Include base64-encoded avatar image",
+            required: false,
+            defaultValue: "false"
+        ),
+        ParameterInfo(
+            name: "fields",
+            description: "Comma-separated list of fields to include",
+            required: false,
+            examples: ["name,email", "name,email,created_at"]
+        )
+    ]
+) { request in
+    let includeAvatar = request.queryParams["include_avatar"] == "true"
+    var user: [String: Any] = [
+        "id": 123,
+        "name": "John Doe",
+        "email": "john@example.com"
+    ]
+    if includeAvatar {
+        user["avatar"] = "data:image/png;base64,..."
+    }
+    return .json(user)
+}
+```
+
+### Custom Sub-Routers
+
+For modular organization, create a `RequestHandler` and mount it at a path prefix:
+
+```swift
+// Create a router for account-related endpoints
+let accountRouter = RequestHandler(description: "User account management")
+
+accountRouter.register("/profile", description: "Get user profile") { request in
+    return .json([
+        "name": "John Doe",
+        "email": "john@example.com",
+        "plan": "premium"
+    ])
+}
+
+accountRouter.register("/settings", description: "Get user settings") { request in
+    return .json([
+        "theme": "dark",
+        "notifications": true,
+        "language": "en"
+    ])
+}
+
+accountRouter.register(
+    "/update",
+    description: "Update user settings",
+    parameters: [
+        ParameterInfo(name: "theme", description: "UI theme", examples: ["light", "dark"]),
+        ParameterInfo(name: "notifications", description: "Enable notifications", examples: ["true", "false"])
+    ]
+) { request in
+    // Handle update...
+    return .json(["success": true])
+}
+
+// Mount at /account - endpoints become /account/profile, /account/settings, /account/update
+server.mount("/account", router: accountRouter)
+```
+
+The mounted router will appear in API discovery with its description and endpoint count.
+
+### Background Thread Handlers
+
+By default, handlers run on the main thread for UIKit access. For file I/O or other non-UI work, set `runsOnMainThread: false`:
+
+```swift
+server.register(
+    "/api/export",
+    description: "Export data to file",
+    runsOnMainThread: false  // Runs on background thread
+) { request in
+    // Safe to do file I/O here without blocking main thread
+    let data = generateExportData()
+    try? data.write(to: exportURL)
+    return .json(["exported": true, "path": exportURL.path])
+}
 ```
 
 ## Multiple Transports
