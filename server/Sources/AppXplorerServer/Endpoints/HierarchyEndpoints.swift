@@ -31,7 +31,7 @@ public enum HierarchyEndpoints {
 	private static func registerHierarchy(with handler: RequestHandler) {
 		handler.register(
 			"/views",
-			description: "Get the complete view hierarchy tree. Returns a nested JSON structure with all views, their properties, and subviews.",
+			description: "Get the complete view hierarchy tree. Returns nested JSON or XML (HTML-like) format showing parent-child relationships.",
 			parameters: [
 				ParameterInfo(
 					name: "window",
@@ -67,6 +67,13 @@ public enum HierarchyEndpoints {
 					defaultValue: "standard",
 					examples: ["minimal", "standard", "full"]
 				),
+				ParameterInfo(
+					name: "format",
+					description: "Output format: 'json' for structured data, 'xml' for HTML-like DOM tree",
+					required: false,
+					defaultValue: "json",
+					examples: ["json", "xml"]
+				),
 			]
 		) { request in
 			#if canImport(UIKit)
@@ -75,9 +82,54 @@ public enum HierarchyEndpoints {
 				let includeHidden: Bool = request.queryParams["includeHidden"] == "true"
 				let includePrivate: Bool = request.queryParams["includePrivate"] != "false"
 				let properties: String = request.queryParams["properties"] ?? "standard"
+				let format: String = request.queryParams["format"]?.lowercased() ?? "json"
 
 				let windows: [UIWindow] = self.getAllWindows()
 
+				// XML format output
+				if format == "xml" {
+					var xml = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
+
+					if let index = windowIndex {
+						guard index >= 0, index < windows.count else {
+							return .error("Window index \(index) out of range (0-\(windows.count - 1))", status: .badRequest)
+						}
+						let window = windows[index]
+						xml += self.serializeViewAsXML(
+							window,
+							depth: 0,
+							maxDepth: maxDepth,
+							includeHidden: includeHidden,
+							includePrivate: includePrivate,
+							properties: properties,
+							indent: 0
+						)
+					}
+					else {
+						xml += "<Windows count=\"\(windows.count)\">\n"
+						for (index, window) in windows.enumerated() {
+							xml += "  <!-- Window \(index) -->\n"
+							xml += self.serializeViewAsXML(
+								window,
+								depth: 0,
+								maxDepth: maxDepth,
+								includeHidden: includeHidden,
+								includePrivate: includePrivate,
+								properties: properties,
+								indent: 1
+							)
+						}
+						xml += "</Windows>\n"
+					}
+
+					return Response(
+						status: .ok,
+						contentType: ContentType(rawValue: "application/xml") ?? .json,
+						body: Data(xml.utf8)
+					)
+				}
+
+				// JSON format output (default)
 				if let index = windowIndex {
 					guard index >= 0, index < windows.count else {
 						return .error("Window index \(index) out of range (0-\(windows.count - 1))", status: .badRequest)
@@ -611,6 +663,137 @@ public enum HierarchyEndpoints {
 			}
 
 			return info
+		}
+
+		/// Serialize a view hierarchy as XML (HTML-like DOM tree)
+		private static func serializeViewAsXML(
+			_ view: UIView,
+			depth: Int,
+			maxDepth: Int,
+			includeHidden: Bool,
+			includePrivate: Bool,
+			properties: String,
+			indent: Int
+		) -> String {
+			let className = String(describing: type(of: view))
+
+			// Filter private views if requested
+			if !includePrivate, className.hasPrefix("_") {
+				return ""
+			}
+
+			let indentStr = String(repeating: "  ", count: indent)
+			let address = String(format: "0x%lx", unsafeBitCast(view, to: Int.self))
+
+			// Build attributes
+			var attrs: [String] = []
+			attrs.append("address=\"\(address)\"")
+
+			if properties != "minimal" {
+				let frame = view.frame
+				attrs.append("frame=\"\(Int(frame.origin.x)),\(Int(frame.origin.y)),\(Int(frame.size.width)),\(Int(frame.size.height))\"")
+
+				if view.isHidden {
+					attrs.append("hidden=\"true\"")
+				}
+				if view.alpha < 1.0 {
+					attrs.append("alpha=\"\(String(format: "%.2f", view.alpha))\"")
+				}
+				if view.tag != 0 {
+					attrs.append("tag=\"\(view.tag)\"")
+				}
+				if !view.isUserInteractionEnabled {
+					attrs.append("userInteraction=\"false\"")
+				}
+
+				if properties == "full" {
+					if let aid = view.accessibilityIdentifier, !aid.isEmpty {
+						attrs.append("accessibilityId=\"\(self.escapeXML(aid))\"")
+					}
+					if let label = view.accessibilityLabel, !label.isEmpty {
+						attrs.append("accessibilityLabel=\"\(self.escapeXML(label))\"")
+					}
+					if view.isFirstResponder {
+						attrs.append("firstResponder=\"true\"")
+					}
+
+					// Type-specific attributes
+					if let label = view as? UILabel, let text = label.text, !text.isEmpty {
+						attrs.append("text=\"\(self.escapeXML(text))\"")
+					}
+					else if let button = view as? UIButton, let title = button.title(for: .normal), !title.isEmpty {
+						attrs.append("title=\"\(self.escapeXML(title))\"")
+					}
+					else if let textField = view as? UITextField {
+						if let text = textField.text, !text.isEmpty {
+							attrs.append("text=\"\(self.escapeXML(text))\"")
+						}
+						if let placeholder = textField.placeholder, !placeholder.isEmpty {
+							attrs.append("placeholder=\"\(self.escapeXML(placeholder))\"")
+						}
+					}
+					else if let textView = view as? UITextView, let text = textView.text, !text.isEmpty {
+						let truncated = String(text.prefix(50))
+						attrs.append("text=\"\(self.escapeXML(truncated))\(text.count > 50 ? "..." : "")\"")
+					}
+					else if let imageView = view as? UIImageView {
+						attrs.append("hasImage=\"\(imageView.image != nil)\"")
+					}
+					else if let uiSwitch = view as? UISwitch {
+						attrs.append("isOn=\"\(uiSwitch.isOn)\"")
+					}
+					else if let slider = view as? UISlider {
+						attrs.append("value=\"\(String(format: "%.1f", slider.value))\"")
+					}
+					else if let scrollView = view as? UIScrollView {
+						attrs.append("contentOffset=\"\(Int(scrollView.contentOffset.x)),\(Int(scrollView.contentOffset.y))\"")
+						attrs.append("contentSize=\"\(Int(scrollView.contentSize.width)),\(Int(scrollView.contentSize.height))\"")
+					}
+				}
+			}
+
+			let attrStr = attrs.isEmpty ? "" : " " + attrs.joined(separator: " ")
+
+			// Get subviews
+			var subviewsXML = ""
+			if maxDepth == 0 || depth < maxDepth {
+				for subview in view.subviews {
+					if !includeHidden, subview.isHidden {
+						continue
+					}
+					let subXML = self.serializeViewAsXML(
+						subview,
+						depth: depth + 1,
+						maxDepth: maxDepth,
+						includeHidden: includeHidden,
+						includePrivate: includePrivate,
+						properties: properties,
+						indent: indent + 1
+					)
+					subviewsXML += subXML
+				}
+			}
+
+			// Output as self-closing tag if no children, or with children
+			if subviewsXML.isEmpty {
+				return "\(indentStr)<\(className)\(attrStr) />\n"
+			}
+			else {
+				return "\(indentStr)<\(className)\(attrStr)>\n\(subviewsXML)\(indentStr)</\(className)>\n"
+			}
+		}
+
+		/// Escape special XML characters
+		private static func escapeXML(_ string: String) -> String {
+			var result = string
+			result = result.replacingOccurrences(of: "&", with: "&amp;")
+			result = result.replacingOccurrences(of: "<", with: "&lt;")
+			result = result.replacingOccurrences(of: ">", with: "&gt;")
+			result = result.replacingOccurrences(of: "\"", with: "&quot;")
+			result = result.replacingOccurrences(of: "'", with: "&apos;")
+			result = result.replacingOccurrences(of: "\n", with: "&#10;")
+			result = result.replacingOccurrences(of: "\r", with: "&#13;")
+			return result
 		}
 
 		private static func serializeViewController(_ vc: UIViewController, depth: Int, maxDepth: Int) -> [String: Any] {
