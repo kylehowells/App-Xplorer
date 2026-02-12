@@ -73,9 +73,81 @@ public class AppXplorerServer {
 
 	// MARK: - Custom Endpoints
 
-	/// Register a custom endpoint
+	/// Register a custom endpoint with full configuration
+	///
+	/// This is the same API used internally by AppXplorer's built-in endpoints.
+	/// Use this to add your own custom routes that integrate seamlessly with
+	/// the API discovery system.
+	///
+	/// Example:
+	/// ```swift
+	/// server.register(
+	///     "/custom/user",
+	///     description: "Get current user information",
+	///     parameters: [
+	///         ParameterInfo(name: "include_avatar", description: "Include base64 avatar", required: false)
+	///     ]
+	/// ) { request in
+	///     let includeAvatar = request.queryParams["include_avatar"] == "true"
+	///     return .json(["username": "john", "email": "john@example.com"])
+	/// }
+	/// ```
+	///
+	/// - Parameters:
+	///   - path: The path for this endpoint (e.g., "/custom/user")
+	///   - description: A description shown in API discovery
+	///   - parameters: Query parameters accepted by this endpoint
+	///   - runsOnMainThread: If true (default), handler runs on main thread for UIKit access
+	///   - handler: The handler function
+	public func register(
+		_ path: String,
+		description: String,
+		parameters: [ParameterInfo] = [],
+		runsOnMainThread: Bool = true,
+		handler: @escaping RouteHandler
+	) {
+		self.requestHandler.register(
+			path,
+			description: description,
+			parameters: parameters,
+			runsOnMainThread: runsOnMainThread,
+			handler: handler
+		)
+	}
+
+	/// Register a custom endpoint (simple form without metadata)
 	public func register(_ path: String, handler: @escaping RouteHandler) {
 		self.requestHandler.register(path, handler: handler)
+	}
+
+	/// Mount a custom sub-router at a path prefix
+	///
+	/// This allows you to create modular endpoint groups that integrate with
+	/// AppXplorer's API discovery. Create a `RequestHandler`, register endpoints
+	/// on it, then mount it at a prefix path.
+	///
+	/// Example:
+	/// ```swift
+	/// // Create a custom router for your app's user endpoints
+	/// let userRouter = RequestHandler(description: "User account endpoints")
+	///
+	/// userRouter.register("/profile", description: "Get user profile") { request in
+	///     return .json(["name": "John Doe", "email": "john@example.com"])
+	/// }
+	///
+	/// userRouter.register("/settings", description: "Get user settings") { request in
+	///     return .json(["theme": "dark", "notifications": true])
+	/// }
+	///
+	/// // Mount at /user prefix - endpoints become /user/profile, /user/settings
+	/// server.mount("/user", router: userRouter)
+	/// ```
+	///
+	/// - Parameters:
+	///   - prefix: The path prefix for all routes in this router (e.g., "/user")
+	///   - router: The RequestHandler containing the routes to mount
+	public func mount(_ prefix: String, router: RequestHandler) {
+		self.requestHandler.mount(prefix, router: router)
 	}
 
 	/// Register a custom endpoint using subscript syntax
