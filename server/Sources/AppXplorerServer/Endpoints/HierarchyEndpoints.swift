@@ -706,48 +706,81 @@ public enum HierarchyEndpoints {
 					attrs.append("userInteraction=\"false\"")
 				}
 
-				if properties == "full" {
-					if let aid = view.accessibilityIdentifier, !aid.isEmpty {
-						attrs.append("accessibilityId=\"\(self.escapeXML(aid))\"")
+				// Always include accessibility ID if present (useful for test automation)
+				if let aid = view.accessibilityIdentifier, !aid.isEmpty {
+					attrs.append("accessibilityId=\"\(self.escapeXML(aid))\"")
+				}
+
+				// Always include text content (clipped to 40 chars) for common controls
+				let maxTextLength = 40
+				if let label = view as? UILabel, let text = label.text, !text.isEmpty {
+					let clipped = text.count > maxTextLength ? String(text.prefix(maxTextLength)) + "..." : text
+					attrs.append("text=\"\(self.escapeXML(clipped))\"")
+				}
+				else if let button = view as? UIButton, let title = button.title(for: .normal), !title.isEmpty {
+					let clipped = title.count > maxTextLength ? String(title.prefix(maxTextLength)) + "..." : title
+					attrs.append("title=\"\(self.escapeXML(clipped))\"")
+				}
+				else if let textField = view as? UITextField {
+					if let text = textField.text, !text.isEmpty {
+						let clipped = text.count > maxTextLength ? String(text.prefix(maxTextLength)) + "..." : text
+						attrs.append("text=\"\(self.escapeXML(clipped))\"")
 					}
+					if let placeholder = textField.placeholder, !placeholder.isEmpty {
+						let clipped = placeholder.count > maxTextLength ? String(placeholder.prefix(maxTextLength)) + "..." : placeholder
+						attrs.append("placeholder=\"\(self.escapeXML(clipped))\"")
+					}
+				}
+				else if let textView = view as? UITextView, let text = textView.text, !text.isEmpty {
+					let clipped = text.count > maxTextLength ? String(text.prefix(maxTextLength)) + "..." : text
+					attrs.append("text=\"\(self.escapeXML(clipped))\"")
+				}
+				else if let searchBar = view as? UISearchBar {
+					if let text = searchBar.text, !text.isEmpty {
+						let clipped = text.count > maxTextLength ? String(text.prefix(maxTextLength)) + "..." : text
+						attrs.append("text=\"\(self.escapeXML(clipped))\"")
+					}
+					if let placeholder = searchBar.placeholder, !placeholder.isEmpty {
+						let clipped = placeholder.count > maxTextLength ? String(placeholder.prefix(maxTextLength)) + "..." : placeholder
+						attrs.append("placeholder=\"\(self.escapeXML(clipped))\"")
+					}
+				}
+				else if let segmented = view as? UISegmentedControl {
+					let selectedIndex = segmented.selectedSegmentIndex
+					if selectedIndex != UISegmentedControl.noSegment,
+					   let title = segmented.titleForSegment(at: selectedIndex)
+					{
+						attrs.append("selectedTitle=\"\(self.escapeXML(title))\"")
+					}
+					attrs.append("selectedIndex=\"\(selectedIndex)\"")
+				}
+				else if let uiSwitch = view as? UISwitch {
+					attrs.append("isOn=\"\(uiSwitch.isOn)\"")
+				}
+				else if let slider = view as? UISlider {
+					attrs.append("value=\"\(String(format: "%.1f", slider.value))\"")
+				}
+				else if let stepper = view as? UIStepper {
+					attrs.append("value=\"\(String(format: "%.0f", stepper.value))\"")
+				}
+				else if let progress = view as? UIProgressView {
+					attrs.append("progress=\"\(String(format: "%.2f", progress.progress))\"")
+				}
+				else if let imageView = view as? UIImageView {
+					attrs.append("hasImage=\"\(imageView.image != nil)\"")
+				}
+				else if let scrollView = view as? UIScrollView {
+					attrs.append("contentOffset=\"\(Int(scrollView.contentOffset.x)),\(Int(scrollView.contentOffset.y))\"")
+					attrs.append("contentSize=\"\(Int(scrollView.contentSize.width)),\(Int(scrollView.contentSize.height))\"")
+				}
+
+				// Full mode adds extra details
+				if properties == "full" {
 					if let label = view.accessibilityLabel, !label.isEmpty {
 						attrs.append("accessibilityLabel=\"\(self.escapeXML(label))\"")
 					}
 					if view.isFirstResponder {
 						attrs.append("firstResponder=\"true\"")
-					}
-
-					// Type-specific attributes
-					if let label = view as? UILabel, let text = label.text, !text.isEmpty {
-						attrs.append("text=\"\(self.escapeXML(text))\"")
-					}
-					else if let button = view as? UIButton, let title = button.title(for: .normal), !title.isEmpty {
-						attrs.append("title=\"\(self.escapeXML(title))\"")
-					}
-					else if let textField = view as? UITextField {
-						if let text = textField.text, !text.isEmpty {
-							attrs.append("text=\"\(self.escapeXML(text))\"")
-						}
-						if let placeholder = textField.placeholder, !placeholder.isEmpty {
-							attrs.append("placeholder=\"\(self.escapeXML(placeholder))\"")
-						}
-					}
-					else if let textView = view as? UITextView, let text = textView.text, !text.isEmpty {
-						let truncated = String(text.prefix(50))
-						attrs.append("text=\"\(self.escapeXML(truncated))\(text.count > 50 ? "..." : "")\"")
-					}
-					else if let imageView = view as? UIImageView {
-						attrs.append("hasImage=\"\(imageView.image != nil)\"")
-					}
-					else if let uiSwitch = view as? UISwitch {
-						attrs.append("isOn=\"\(uiSwitch.isOn)\"")
-					}
-					else if let slider = view as? UISlider {
-						attrs.append("value=\"\(String(format: "%.1f", slider.value))\"")
-					}
-					else if let scrollView = view as? UIScrollView {
-						attrs.append("contentOffset=\"\(Int(scrollView.contentOffset.x)),\(Int(scrollView.contentOffset.y))\"")
-						attrs.append("contentSize=\"\(Int(scrollView.contentSize.width)),\(Int(scrollView.contentSize.height))\"")
 					}
 				}
 			}
