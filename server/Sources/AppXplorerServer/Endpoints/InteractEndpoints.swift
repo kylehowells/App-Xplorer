@@ -70,7 +70,17 @@ public enum InteractEndpoints {
 				]
 
 				// Handle UIControl subclasses (buttons, switches, etc.)
-				if let control = view as? UIControl {
+				if let uiSwitch = view as? UISwitch {
+					// UISwitch needs to be toggled manually, then valueChanged sent
+					let previousState = uiSwitch.isOn
+					uiSwitch.setOn(!previousState, animated: true)
+					uiSwitch.sendActions(for: .valueChanged)
+					result["action"] = "setOn(!isOn) + sendActions(for: .valueChanged)"
+					result["success"] = true
+					result["previousState"] = previousState
+					result["switchIsOn"] = uiSwitch.isOn
+				}
+				else if let control = view as? UIControl {
 					control.sendActions(for: .touchUpInside)
 					result["action"] = "sendActions(for: .touchUpInside)"
 					result["success"] = true
@@ -78,9 +88,6 @@ public enum InteractEndpoints {
 
 					if let button = control as? UIButton {
 						result["buttonTitle"] = button.title(for: .normal)
-					}
-					else if let uiSwitch = control as? UISwitch {
-						result["switchIsOn"] = uiSwitch.isOn
 					}
 				}
 				// Try accessibility activation for other views
