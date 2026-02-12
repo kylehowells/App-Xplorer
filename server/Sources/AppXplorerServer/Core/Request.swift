@@ -3,7 +3,7 @@ import Foundation
 // MARK: - Request
 
 /// A transport-agnostic request
-public struct Request {
+public struct Request: Sendable {
 	/// The endpoint path (e.g., "/info", "/screenshot")
 	public let path: String
 

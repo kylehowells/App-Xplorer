@@ -3,7 +3,7 @@ import Foundation
 // MARK: - ResponseStatus
 
 /// Response status codes
-public enum ResponseStatus: Int {
+public enum ResponseStatus: Int, Sendable {
 	case ok = 200
 	case badRequest = 400
 	case notFound = 404
@@ -13,7 +13,7 @@ public enum ResponseStatus: Int {
 // MARK: - ContentType
 
 /// Common content types
-public enum ContentType: String {
+public enum ContentType: String, Sendable {
 	case json = "application/json"
 	case html = "text/html"
 	case text = "text/plain"
@@ -25,7 +25,7 @@ public enum ContentType: String {
 // MARK: - Response
 
 /// A transport-agnostic response
-public struct Response {
+public struct Response: Sendable {
 	/// Response status
 	public let status: ResponseStatus
 

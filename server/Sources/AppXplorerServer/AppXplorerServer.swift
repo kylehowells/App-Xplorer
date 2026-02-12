@@ -20,8 +20,8 @@ public class AppXplorerServer {
 	}
 
 	public init() {
-		// Register built-in endpoints
-		BuiltInEndpoints.registerAll(with: self.requestHandler)
+		// Configure the root router with all built-in endpoints
+		RootRouter.registerAll(with: self.requestHandler)
 	}
 
 	// MARK: - Transport Management

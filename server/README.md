@@ -6,20 +6,40 @@ A transport-agnostic debugging server that runs inside iOS apps, providing remot
 
 - **Remote Debugging** — Connect to your iOS app from any device on the network
 - **Transport Agnostic** — Works over HTTP, WebSocket, Iroh, Bluetooth, or custom transports
+- **Self-Documenting API** — Every endpoint describes itself with parameters, defaults, and examples
 - **Built-in Endpoints** — App info, file browser, UserDefaults viewer, and more
 - **Extensible** — Add custom endpoints with a simple API
 - **Lightweight** — Minimal footprint, runs in the background
+
+## API Discovery
+
+The API is self-documenting. Visit the root endpoint (`/`) to see all available endpoints with their descriptions and parameters:
+
+```bash
+curl http://device-ip:8080/
+```
+
+Returns a JSON tree of all endpoints, their descriptions, parameters (with defaults and examples), and sub-routers.
+
+Use `?depth=shallow` to get a summary view showing only sub-router counts instead of full endpoint details.
 
 ## Built-in Endpoints
 
 | Endpoint | Description |
 |----------|-------------|
-| `GET /` | Server status and endpoint list |
+| `GET /` | API index with full endpoint documentation |
 | `GET /info` | App, device, and screen information |
-| `GET /screenshot` | Capture current screen |
+| `GET /screenshot` | Capture current screen as PNG |
 | `GET /hierarchy` | View hierarchy inspection |
-| `GET /files?path=` | Browse the app's file system |
 | `GET /userdefaults` | View UserDefaults contents |
+| `GET /files/` | File system browser (sub-router with its own index) |
+| `GET /files/list` | List directory contents |
+| `GET /files/read` | Read file contents |
+| `GET /files/metadata` | Get file/directory metadata |
+| `GET /files/head` | Read first N lines of a text file |
+| `GET /files/tail` | Read last N lines of a text file |
+
+Each endpoint documents its own parameters. For example, `/files/list` accepts `path`, `sort`, `order`, `limit`, and `offset` parameters—all described in the API response.
 
 ## Installation
 
@@ -52,7 +72,7 @@ try server.start()
 // 📱 Device IP: 192.168.1.100
 ```
 
-Then open `http://192.168.1.100:8080` in your browser.
+Then query the API at `http://192.168.1.100:8080/`.
 
 ## Custom Endpoints
 

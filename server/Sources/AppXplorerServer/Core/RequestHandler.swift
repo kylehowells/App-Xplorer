@@ -1,9 +1,50 @@
 import Foundation
 
+// MARK: - ResponseBox
+
+/// Thread-safe box for passing Response across dispatch boundaries
+private final class ResponseBox: @unchecked Sendable {
+	var value: Response? = nil
+}
+
 // MARK: - RouteHandler
 
 /// Type alias for route handler functions
-public typealias RouteHandler = (Request) -> Response
+public typealias RouteHandler = @Sendable (Request) -> Response
+
+// MARK: - ParameterInfo
+
+/// Information about a query parameter
+public struct ParameterInfo: Encodable {
+	/// Parameter name
+	public let name: String
+
+	/// Description of the parameter
+	public let description: String
+
+	/// Whether this parameter is required
+	public let required: Bool
+
+	/// Default value if not provided
+	public let defaultValue: String?
+
+	/// Example values
+	public let examples: [String]?
+
+	public init(
+		name: String,
+		description: String,
+		required: Bool = false,
+		defaultValue: String? = nil,
+		examples: [String]? = nil
+	) {
+		self.name = name
+		self.description = description
+		self.required = required
+		self.defaultValue = defaultValue
+		self.examples = examples
+	}
+}
 
 // MARK: - RouteInfo
 
@@ -15,12 +56,26 @@ public struct RouteInfo {
 	/// A short description of what this endpoint does
 	public let description: String
 
+	/// Query parameters accepted by this endpoint
+	public let parameters: [ParameterInfo]
+
+	/// Whether this handler should run on the main thread
+	public let runsOnMainThread: Bool
+
 	/// The handler function
 	public let handler: RouteHandler
 
-	public init(path: String, description: String, handler: @escaping RouteHandler) {
+	public init(
+		path: String,
+		description: String,
+		parameters: [ParameterInfo] = [],
+		runsOnMainThread: Bool = true,
+		handler: @escaping RouteHandler
+	) {
 		self.path = path
 		self.description = description
+		self.parameters = parameters
+		self.runsOnMainThread = runsOnMainThread
 		self.handler = handler
 	}
 }
@@ -69,9 +124,13 @@ public struct EndpointInfo: Encodable {
 	/// A short description of what this endpoint does
 	public let description: String
 
-	public init(path: String, description: String) {
+	/// Query parameters accepted by this endpoint
+	public let parameters: [ParameterInfo]?
+
+	public init(path: String, description: String, parameters: [ParameterInfo]? = nil) {
 		self.path = path
 		self.description = description
+		self.parameters = parameters
 	}
 }
 
@@ -82,7 +141,10 @@ public struct EndpointInfo: Encodable {
 /// Routes are registered by path, and incoming requests are matched
 /// to the appropriate handler. This class is transport-agnostic.
 /// Supports sub-routers for hierarchical organization.
-public class RequestHandler {
+///
+/// Note: This class is marked @unchecked Sendable because route handlers
+/// that need UIKit access are automatically dispatched to the main thread.
+public final class RequestHandler: @unchecked Sendable {
 	/// A description of this router
 	public var description: String = ""
 
@@ -106,9 +168,27 @@ public class RequestHandler {
 
 	// MARK: - Route Registration
 
-	/// Register a handler for a path with a description
-	public func register(_ path: String, description: String, handler: @escaping RouteHandler) {
-		let info: RouteInfo = .init(path: path, description: description, handler: handler)
+	/// Register a handler for a path with a description and parameters
+	/// - Parameters:
+	///   - path: The path to register
+	///   - description: A description of what this endpoint does
+	///   - parameters: Query parameters accepted by this endpoint
+	///   - runsOnMainThread: If true (default), handler runs on main thread for UIKit access. Set to false for file I/O or other non-UI work.
+	///   - handler: The handler function
+	public func register(
+		_ path: String,
+		description: String,
+		parameters: [ParameterInfo] = [],
+		runsOnMainThread: Bool = true,
+		handler: @escaping RouteHandler
+	) {
+		let info: RouteInfo = .init(
+			path: path,
+			description: description,
+			parameters: parameters,
+			runsOnMainThread: runsOnMainThread,
+			handler: handler
+		)
 		self.routes[path] = info
 	}
 
@@ -170,7 +250,7 @@ public class RequestHandler {
 
 		// Try to find exact match in local routes
 		if let routeInfo: RouteInfo = self.routes[path] {
-			return routeInfo.handler(request)
+			return self.executeHandler(routeInfo: routeInfo, request: request)
 		}
 
 		// Try path with trailing slash removed
@@ -178,34 +258,67 @@ public class RequestHandler {
 			? String(path.dropLast())
 			: path
 		if let routeInfo: RouteInfo = self.routes[pathWithoutTrailingSlash] {
-			return routeInfo.handler(request)
+			return self.executeHandler(routeInfo: routeInfo, request: request)
 		}
 
 		// No match found
 		return self.notFoundHandler(request)
 	}
 
+	/// Execute a route handler, dispatching to main thread if required
+	private func executeHandler(routeInfo: RouteInfo, request: Request) -> Response {
+		// If already on main thread or handler doesn't need main thread, execute directly
+		if !routeInfo.runsOnMainThread || Thread.isMainThread {
+			return routeInfo.handler(request)
+		}
+
+		// Dispatch to main thread and wait for result using thread-safe box
+		let responseBox: ResponseBox = .init()
+		let semaphore: DispatchSemaphore = .init(value: 0)
+		let handler: RouteHandler = routeInfo.handler
+		let req: Request = request
+
+		DispatchQueue.main.async {
+			responseBox.value = handler(req)
+			semaphore.signal()
+		}
+
+		// Wait with timeout to prevent deadlocks
+		let result: DispatchTimeoutResult = semaphore.wait(timeout: .now() + 30.0)
+
+		if result == .timedOut {
+			return .error("Request handler timed out", status: .internalError)
+		}
+
+		return responseBox.value ?? .error("Handler returned nil", status: .internalError)
+	}
+
 	// MARK: - API Discovery
 
 	/// Get information about this router
-	/// - Parameter deep: If true, includes full endpoint details; if false, just counts
+	/// - Parameter deep: If true, recursively includes sub-router endpoints; if false, only shows sub-router summaries
 	public func routerInfo(deep: Bool = false) -> RouterInfo {
-		let endpoints: [EndpointInfo]?
+		// Always include this router's own endpoints
+		let endpoints: [EndpointInfo] = self.routes
+			.values
+			.sorted { $0.path < $1.path }
+			.map { EndpointInfo(
+				path: $0.path,
+				description: $0.description,
+				parameters: $0.parameters.isEmpty ? nil : $0.parameters
+			) }
+
 		let routers: [RouterInfo]?
 
 		if deep {
-			endpoints = self.routes
-				.values
-				.sorted { $0.path < $1.path }
-				.map { EndpointInfo(path: $0.path, description: $0.description) }
-
+			// Deep: recursively include full sub-router info with their endpoints
 			routers = self.subRouters
 				.sorted { $0.key < $1.key }
 				.map { $0.value.routerInfo(deep: true) }
 		}
 		else {
-			endpoints = nil
-			routers = self.subRouters
+			// Shallow: only show sub-router summaries (path, description, count)
+			routers = self.subRouters.isEmpty ? nil : self.subRouters
 				.sorted { $0.key < $1.key }
 				.map { RouterInfo(
 					path: $0.value.basePath,
@@ -218,7 +331,7 @@ public class RequestHandler {
 			path: self.basePath.isEmpty ? "/" : self.basePath,
 			description: self.description,
 			endpointCount: self.totalEndpointCount,
-			endpoints: deep ? endpoints : nil,
+			endpoints: endpoints.isEmpty ? nil : endpoints,
 			routers: routers
 		)
 	}
@@ -242,6 +355,10 @@ public class RequestHandler {
 		return self.routes
 			.values
 			.sorted { $0.path < $1.path }
-			.map { EndpointInfo(path: $0.path, description: $0.description) }
+			.map { EndpointInfo(
+				path: $0.path,
+				description: $0.description,
+				parameters: $0.parameters.isEmpty ? nil : $0.parameters
+			) }
 	}
 }

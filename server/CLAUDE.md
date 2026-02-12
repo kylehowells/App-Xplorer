@@ -12,7 +12,7 @@ The server follows a transport-agnostic design. See `docs/architecture.md` for f
 - `Request` / `Response` - Transport-agnostic request/response types
 - `RequestHandler` - Central router that dispatches requests to handlers
 - `TransportAdapter` - Protocol for transport implementations (HTTP, WebSocket, etc.)
-- `BuiltInEndpoints` - Default endpoints (/info, /files, /userdefaults, etc.)
+- `RootRouter` - Configures built-in endpoints (/info, /files, /userdefaults, etc.)
 
 ## Development Guidelines
 
@@ -27,6 +27,7 @@ The server follows a transport-agnostic design. See `docs/architecture.md` for f
 - Key components should have unit tests
 - Run tests before committing: `swift test`
 - Tests are in `Tests/AppXplorerServerTests/`
+- Test files should be named to match their implementation files (e.g., `FilesEndpointsTests.swift` for `FilesEndpoints.swift`)
 
 ### Code Formatting
 
@@ -77,12 +78,19 @@ server/
 │   │   ├── RequestHandler.swift # Central router
 │   │   └── TransportAdapter.swift # Transport protocol
 │   ├── Endpoints/
-│   │   └── BuiltInEndpoints.swift # Default endpoints
+│   │   ├── RootRouter.swift      # Root router configuration
+│   │   ├── InfoEndpoints.swift   # /info, /screenshot, /hierarchy
+│   │   ├── FilesEndpoints.swift  # /files/* sub-router
+│   │   └── UserDefaultsEndpoints.swift # /userdefaults
 │   └── Transports/
 │       └── HTTPTransportAdapter.swift # HTTP via Swifter
 └── Tests/
     └── AppXplorerServerTests/
-        └── AppXplorerServerTests.swift
+        ├── RequestTests.swift        # Request type tests
+        ├── ResponseTests.swift       # Response type tests
+        ├── RequestHandlerTests.swift # Router and sub-router tests
+        ├── FilesEndpointsTests.swift # /files/* endpoint tests
+        └── RootRouterTests.swift     # Root router integration tests
 ```
 
 ## Usage Example
@@ -101,9 +109,10 @@ server["/custom"] = { request in
 ## Adding New Features
 
 ### Adding a new endpoint:
-1. Add handler in `BuiltInEndpoints.swift` or register dynamically
-2. Add tests for the endpoint logic
-3. Update `docs/` if it's a significant feature
+1. Each root-level endpoint (e.g., `/files/`, `/info`) should have its own file in `Endpoints/`
+2. Wire up the new endpoint in `RootRouter.swift`
+3. Add tests in a matching test file (e.g., `FilesEndpoints.swift` → `FilesEndpointsTests.swift`)
+4. Update `docs/` if it's a significant feature
 
 ### Adding a new transport:
 1. Create new file in `Transports/` implementing `TransportAdapter`
