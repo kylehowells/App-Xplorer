@@ -216,8 +216,23 @@ public enum InteractEndpoints {
 					result["previousText"] = previousText
 					result["newText"] = textField.text
 
-					// Trigger text change notifications
+					// Trigger all text change notifications
+					// 1. Send control event for target-action bindings
 					textField.sendActions(for: .editingChanged)
+
+					// 2. Post notification for NotificationCenter observers
+					NotificationCenter.default.post(
+						name: UITextField.textDidChangeNotification,
+						object: textField
+					)
+
+					// 3. Call delegate method if implemented
+					if let delegate = textField.delegate {
+						let selector = #selector(UITextFieldDelegate.textFieldDidChangeSelection(_:))
+						if delegate.responds(to: selector) {
+							_ = delegate.perform(selector, with: textField)
+						}
+					}
 				}
 				// Handle UITextView
 				else if let textView = targetResponder as? UITextView {
@@ -243,11 +258,20 @@ public enum InteractEndpoints {
 					result["previousText"] = String(previousText.prefix(100))
 					result["newText"] = String((textView.text ?? "").prefix(100))
 
-					// Trigger delegate notification
+					// Trigger all text change notifications
+					// 1. Post notification for NotificationCenter observers
 					NotificationCenter.default.post(
 						name: UITextView.textDidChangeNotification,
 						object: textView
 					)
+
+					// 2. Call delegate method if implemented
+					if let delegate = textView.delegate {
+						let selector = #selector(UITextViewDelegate.textViewDidChange(_:))
+						if delegate.responds(to: selector) {
+							_ = delegate.perform(selector, with: textView)
+						}
+					}
 				}
 				// Handle UISearchBar
 				else if let searchBar = targetResponder as? UISearchBar {
@@ -264,6 +288,14 @@ public enum InteractEndpoints {
 					result["success"] = true
 					result["previousText"] = previousText
 					result["newText"] = searchBar.text
+
+					// Trigger delegate method for search bar text changes
+					if let delegate = searchBar.delegate {
+						let selector = #selector(UISearchBarDelegate.searchBar(_:textDidChange:))
+						if delegate.responds(to: selector) {
+							_ = delegate.perform(selector, with: searchBar, with: searchBar.text ?? "")
+						}
+					}
 				}
 				else {
 					result["success"] = false
