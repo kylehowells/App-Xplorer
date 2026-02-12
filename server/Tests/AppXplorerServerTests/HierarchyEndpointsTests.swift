@@ -46,7 +46,7 @@ import Testing
 
 	// Check parameters are documented
 	let params = viewsEndpoint?.parameters
-	#expect(params?.count == 5)
+	#expect(params?.count == 6) // window, maxDepth, includeHidden, includePrivate, properties, format
 
 	let windowParam = params?.first { $0.name == "window" }
 	#expect(windowParam != nil)

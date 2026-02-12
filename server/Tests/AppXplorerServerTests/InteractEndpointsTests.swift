@@ -16,7 +16,8 @@ import Testing
 	#expect(router.registeredPaths.contains("/scroll"))
 	#expect(router.registeredPaths.contains("/swipe"))
 	#expect(router.registeredPaths.contains("/accessibility"))
-	#expect(router.registeredPaths.count == 8)
+	#expect(router.registeredPaths.contains("/select-cell"))
+	#expect(router.registeredPaths.count == 9)
 }
 
 @Test func testInteractRouterIndex() async throws {
@@ -129,8 +130,8 @@ import Testing
 	let router: RequestHandler = InteractEndpoints.createRouter()
 	let info = router.routerInfo(deep: true)
 
-	// 8 endpoints: /, /tap, /type, /focus, /resign, /scroll, /swipe, /accessibility
-	#expect(info.endpoints?.count == 8)
+	// 9 endpoints: /, /tap, /type, /focus, /resign, /scroll, /swipe, /accessibility, /select-cell
+	#expect(info.endpoints?.count == 9)
 }
 
 @Test func testInteractInRootIndex() async throws {
@@ -145,7 +146,7 @@ import Testing
 
 	#expect(interactRouter != nil)
 	#expect(interactRouter?["description"] as? String == "Interact with UI elements: tap buttons, type text, scroll views, and trigger gestures")
-	#expect(interactRouter?["endpointCount"] as? Int == 8)
+	#expect(interactRouter?["endpointCount"] as? Int == 9)
 }
 
 @Test func testInteractMountedAsSubRouter() async throws {
@@ -159,6 +160,35 @@ import Testing
 
 	let decoded = try JSONSerialization.jsonObject(with: response.body) as? [String: Any]
 	#expect(decoded?["path"] as? String == "/interact")
+}
+
+// MARK: - Select Cell Tests
+
+@Test func testInteractSelectCellMissingAddress() async throws {
+	let router: RequestHandler = InteractEndpoints.createRouter()
+
+	let response = router.handle(Request(path: "/select-cell"))
+
+	#expect(response.status == .badRequest)
+}
+
+@Test func testInteractSelectCellMissingRow() async throws {
+	let router: RequestHandler = InteractEndpoints.createRouter()
+
+	let response = router.handle(Request(path: "/select-cell", queryParams: ["address": "0x12345678"]))
+
+	#expect(response.status == .badRequest)
+}
+
+@Test func testInteractSelectCellInvalidAddress() async throws {
+	let router: RequestHandler = InteractEndpoints.createRouter()
+
+	let response = router.handle(Request(path: "/select-cell", queryParams: [
+		"address": "not-valid",
+		"row": "0",
+	]))
+
+	#expect(response.status == .badRequest)
 }
 
 // MARK: - Platform-Specific Tests

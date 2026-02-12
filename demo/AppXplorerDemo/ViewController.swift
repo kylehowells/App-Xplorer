@@ -21,9 +21,13 @@ class MainTabBarController: UITabBarController {
 
 		let listVC = ListViewController()
 		let listNav = UINavigationController(rootViewController: listVC)
-		listNav.tabBarItem = UITabBarItem(title: "List", image: UIImage(systemName: "list.bullet"), tag: 3)
+		listNav.tabBarItem = UITabBarItem(title: "Table", image: UIImage(systemName: "list.bullet"), tag: 3)
 
-		self.viewControllers = [homeVC, controlsVC, formsVC, listNav]
+		let collectionVC = CollectionViewController()
+		let collectionNav = UINavigationController(rootViewController: collectionVC)
+		collectionNav.tabBarItem = UITabBarItem(title: "Grid", image: UIImage(systemName: "square.grid.2x2"), tag: 4)
+
+		self.viewControllers = [homeVC, controlsVC, formsVC, listNav, collectionNav]
 
 		// Set up test UserDefaults
 		self.setupTestUserDefaults()
@@ -492,7 +496,10 @@ class FormsViewController: UIViewController {
 
 // MARK: - List View Controller
 
-class ListViewController: UITableViewController {
+class ListViewController: UIViewController, UITableViewDataSource, UITableViewDelegate {
+	private var tableView: UITableView!
+	private var selectedLabel: UILabel!
+
 	private let items = [
 		"Apple", "Banana", "Cherry", "Date", "Elderberry",
 		"Fig", "Grape", "Honeydew", "Jackfruit", "Kiwi",
@@ -502,32 +509,256 @@ class ListViewController: UITableViewController {
 
 	override func viewDidLoad() {
 		super.viewDidLoad()
-		self.title = "Scrollable List"
-		self.tableView.register(UITableViewCell.self, forCellReuseIdentifier: "cell")
-		self.tableView.accessibilityIdentifier = "fruitsTableView"
+		self.title = "Fruit List"
+		self.view.backgroundColor = .systemBackground
+
+		self.setupSelectedLabel()
+		self.setupTableView()
 	}
 
-	override func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
+	private func setupSelectedLabel() {
+		self.selectedLabel = UILabel()
+		self.selectedLabel.text = "Tap a fruit to select it"
+		self.selectedLabel.textAlignment = .center
+		self.selectedLabel.font = .systemFont(ofSize: 18, weight: .medium)
+		self.selectedLabel.textColor = .secondaryLabel
+		self.selectedLabel.accessibilityIdentifier = "selectedFruitLabel"
+		self.selectedLabel.backgroundColor = .systemBackground
+
+		self.view.addSubview(self.selectedLabel)
+	}
+
+	private func setupTableView() {
+		self.tableView = UITableView(frame: .zero, style: .plain)
+		self.tableView.dataSource = self
+		self.tableView.delegate = self
+		self.tableView.register(UITableViewCell.self, forCellReuseIdentifier: "cell")
+		self.tableView.accessibilityIdentifier = "fruitsTableView"
+
+		self.view.addSubview(self.tableView)
+	}
+
+	override func viewDidLayoutSubviews() {
+		super.viewDidLayoutSubviews()
+
+		let labelHeight: CGFloat = 50
+		let safeArea = self.view.safeAreaInsets
+
+		self.selectedLabel.frame = CGRect(
+			x: 0,
+			y: safeArea.top,
+			width: self.view.bounds.width,
+			height: labelHeight
+		)
+
+		self.tableView.frame = CGRect(
+			x: 0,
+			y: safeArea.top + labelHeight,
+			width: self.view.bounds.width,
+			height: self.view.bounds.height - safeArea.top - labelHeight - safeArea.bottom
+		)
+	}
+
+	// MARK: - UITableViewDataSource
+
+	func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
 		return self.items.count
 	}
 
-	override func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
+	func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
 		let cell = tableView.dequeueReusableCell(withIdentifier: "cell", for: indexPath)
 		cell.textLabel?.text = self.items[indexPath.row]
 		cell.accessibilityIdentifier = "fruit_\(indexPath.row)"
 		return cell
 	}
 
-	override func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
+	// MARK: - UITableViewDelegate
+
+	func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
 		tableView.deselectRow(at: indexPath, animated: true)
 
-		let alert = UIAlertController(
-			title: "Selected",
-			message: "You selected: \(self.items[indexPath.row])",
-			preferredStyle: .alert
+		let fruit = self.items[indexPath.row]
+		self.selectedLabel.text = "Selected: \(fruit)"
+		self.selectedLabel.textColor = .systemGreen
+	}
+}
+
+// MARK: - Collection View Controller
+
+class CollectionViewController: UIViewController, UICollectionViewDataSource, UICollectionViewDelegate, UICollectionViewDelegateFlowLayout {
+	private var collectionView: UICollectionView!
+	private var selectedLabel: UILabel!
+
+	private let colors: [(name: String, color: UIColor)] = [
+		("Red", .systemRed),
+		("Orange", .systemOrange),
+		("Yellow", .systemYellow),
+		("Green", .systemGreen),
+		("Mint", .systemMint),
+		("Teal", .systemTeal),
+		("Cyan", .systemCyan),
+		("Blue", .systemBlue),
+		("Indigo", .systemIndigo),
+		("Purple", .systemPurple),
+		("Pink", .systemPink),
+		("Brown", .systemBrown),
+		("Gray", .systemGray),
+		("Gray 2", .systemGray2),
+		("Gray 3", .systemGray3),
+		("Gray 4", .systemGray4),
+	]
+
+	override func viewDidLoad() {
+		super.viewDidLoad()
+		self.title = "Color Grid"
+		self.view.backgroundColor = .systemBackground
+
+		self.setupCollectionView()
+		self.setupSelectedLabel()
+	}
+
+	private func setupCollectionView() {
+		let layout = UICollectionViewFlowLayout()
+		layout.minimumInteritemSpacing = 10
+		layout.minimumLineSpacing = 10
+		layout.sectionInset = UIEdgeInsets(top: 10, left: 10, bottom: 10, right: 10)
+
+		self.collectionView = UICollectionView(frame: .zero, collectionViewLayout: layout)
+		self.collectionView.backgroundColor = .systemBackground
+		self.collectionView.dataSource = self
+		self.collectionView.delegate = self
+		self.collectionView.accessibilityIdentifier = "colorsCollectionView"
+		self.collectionView.register(ColorCell.self, forCellWithReuseIdentifier: "ColorCell")
+
+		self.view.addSubview(self.collectionView)
+	}
+
+	private func setupSelectedLabel() {
+		self.selectedLabel = UILabel()
+		self.selectedLabel.text = "Tap a color to select it"
+		self.selectedLabel.textAlignment = .center
+		self.selectedLabel.font = .systemFont(ofSize: 18, weight: .medium)
+		self.selectedLabel.textColor = .secondaryLabel
+		self.selectedLabel.accessibilityIdentifier = "selectedColorLabel"
+
+		self.view.addSubview(self.selectedLabel)
+	}
+
+	override func viewDidLayoutSubviews() {
+		super.viewDidLayoutSubviews()
+
+		let labelHeight: CGFloat = 50
+		let safeArea = self.view.safeAreaInsets
+
+		self.selectedLabel.frame = CGRect(
+			x: 0,
+			y: safeArea.top,
+			width: self.view.bounds.width,
+			height: labelHeight
 		)
-		alert.addAction(UIAlertAction(title: "OK", style: .default))
-		self.present(alert, animated: true)
+
+		self.collectionView.frame = CGRect(
+			x: 0,
+			y: safeArea.top + labelHeight,
+			width: self.view.bounds.width,
+			height: self.view.bounds.height - safeArea.top - labelHeight - safeArea.bottom
+		)
+	}
+
+	// MARK: - UICollectionViewDataSource
+
+	func collectionView(_ collectionView: UICollectionView, numberOfItemsInSection section: Int) -> Int {
+		return self.colors.count
+	}
+
+	func collectionView(_ collectionView: UICollectionView, cellForItemAt indexPath: IndexPath) -> UICollectionViewCell {
+		let cell = collectionView.dequeueReusableCell(withReuseIdentifier: "ColorCell", for: indexPath) as! ColorCell
+		let colorInfo = self.colors[indexPath.item]
+		cell.configure(name: colorInfo.name, color: colorInfo.color)
+		cell.accessibilityIdentifier = "color_\(indexPath.item)"
+		return cell
+	}
+
+	// MARK: - UICollectionViewDelegate
+
+	func collectionView(_ collectionView: UICollectionView, didSelectItemAt indexPath: IndexPath) {
+		let colorInfo = self.colors[indexPath.item]
+		self.selectedLabel.text = "Selected: \(colorInfo.name)"
+		self.selectedLabel.textColor = colorInfo.color
+
+		// Show a brief animation
+		if let cell = collectionView.cellForItem(at: indexPath) {
+			UIView.animate(withDuration: 0.1, animations: {
+				cell.transform = CGAffineTransform(scaleX: 0.95, y: 0.95)
+			}) { _ in
+				UIView.animate(withDuration: 0.1) {
+					cell.transform = .identity
+				}
+			}
+		}
+	}
+
+	// MARK: - UICollectionViewDelegateFlowLayout
+
+	func collectionView(_ collectionView: UICollectionView, layout collectionViewLayout: UICollectionViewLayout, sizeForItemAt indexPath: IndexPath) -> CGSize {
+		let spacing: CGFloat = 10
+		let insets: CGFloat = 20 // 10 on each side
+		let availableWidth = collectionView.bounds.width - insets - (spacing * 3) // 4 columns, 3 gaps
+		let itemWidth = availableWidth / 4
+		return CGSize(width: itemWidth, height: itemWidth + 25) // Extra height for label
+	}
+}
+
+// MARK: - Color Cell
+
+class ColorCell: UICollectionViewCell {
+	private let colorView = UIView()
+	private let nameLabel = UILabel()
+
+	override init(frame: CGRect) {
+		super.init(frame: frame)
+		self.setupViews()
+	}
+
+	required init?(coder: NSCoder) {
+		super.init(coder: coder)
+		self.setupViews()
+	}
+
+	private func setupViews() {
+		self.colorView.layer.cornerRadius = 8
+		self.colorView.clipsToBounds = true
+		self.contentView.addSubview(self.colorView)
+
+		self.nameLabel.font = .systemFont(ofSize: 12, weight: .medium)
+		self.nameLabel.textAlignment = .center
+		self.nameLabel.adjustsFontSizeToFitWidth = true
+		self.nameLabel.minimumScaleFactor = 0.7
+		self.contentView.addSubview(self.nameLabel)
+	}
+
+	override func layoutSubviews() {
+		super.layoutSubviews()
+
+		let labelHeight: CGFloat = 20
+		self.colorView.frame = CGRect(
+			x: 0,
+			y: 0,
+			width: self.contentView.bounds.width,
+			height: self.contentView.bounds.height - labelHeight - 5
+		)
+
+		self.nameLabel.frame = CGRect(
+			x: 0,
+			y: self.colorView.frame.maxY + 2,
+			width: self.contentView.bounds.width,
+			height: labelHeight
+		)
+	}
+
+	func configure(name: String, color: UIColor) {
+		self.colorView.backgroundColor = color
+		self.nameLabel.text = name
 	}
 }
 

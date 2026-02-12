@@ -23,6 +23,7 @@ public enum InteractEndpoints {
 		self.registerScroll(with: router)
 		self.registerSwipe(with: router)
 		self.registerAccessibility(with: router)
+		self.registerSelectCell(with: router)
 
 		return router
 	}
@@ -759,6 +760,189 @@ public enum InteractEndpoints {
 
 					result["actionPerformed"] = actionName
 					result["success"] = success
+				}
+
+				return .json(result)
+			#else
+				return .error("UI interaction is only available on iOS/tvOS", status: .badRequest)
+			#endif
+		}
+	}
+
+	// MARK: - Select Cell
+
+	private static func registerSelectCell(with handler: RequestHandler) {
+		handler.register(
+			"/select-cell",
+			description: "Select a cell in a UITableView or UICollectionView by index path. Triggers the appropriate delegate method (didSelectRowAt/didSelectItemAt).",
+			parameters: [
+				ParameterInfo(
+					name: "address",
+					description: "Memory address of the UITableView or UICollectionView",
+					required: true,
+					examples: ["0x12345678"]
+				),
+				ParameterInfo(
+					name: "section",
+					description: "Section index (0-based)",
+					required: false,
+					defaultValue: "0",
+					examples: ["0", "1", "2"]
+				),
+				ParameterInfo(
+					name: "row",
+					description: "Row index for UITableView (0-based)",
+					required: false,
+					examples: ["0", "5", "10"]
+				),
+				ParameterInfo(
+					name: "item",
+					description: "Item index for UICollectionView (0-based). Use 'row' or 'item' interchangeably.",
+					required: false,
+					examples: ["0", "5", "10"]
+				),
+				ParameterInfo(
+					name: "scroll",
+					description: "Whether to scroll to make the cell visible before selecting",
+					required: false,
+					defaultValue: "true",
+					examples: ["true", "false"]
+				),
+				ParameterInfo(
+					name: "animated",
+					description: "Whether to animate the scroll and selection",
+					required: false,
+					defaultValue: "true",
+					examples: ["true", "false"]
+				),
+			]
+		) { request in
+			#if canImport(UIKit)
+				guard let addressString = request.queryParams["address"] else {
+					return .error("Missing required parameter: address", status: .badRequest)
+				}
+
+				guard let address = SafeAddressLookup.parseAddress(addressString) else {
+					return .error("Invalid address format: \(addressString)", status: .badRequest)
+				}
+
+				guard let view = SafeAddressLookup.view(at: address) else {
+					return .error("No valid UIView found at address \(addressString)", status: .notFound)
+				}
+
+				let section = Int(request.queryParams["section"] ?? "0") ?? 0
+				// Accept either "row" or "item"
+				let rowOrItem = request.queryParams["row"] ?? request.queryParams["item"]
+				guard let rowOrItemString = rowOrItem, let row = Int(rowOrItemString) else {
+					return .error("Missing required parameter: row (or item)", status: .badRequest)
+				}
+
+				let shouldScroll = request.queryParams["scroll"] != "false"
+				let animated = request.queryParams["animated"] != "false"
+
+				var result: [String: Any] = [
+					"address": addressString,
+					"class": String(describing: type(of: view)),
+					"indexPath": [
+						"section": section,
+						"row": row,
+					],
+				]
+
+				// Handle UITableView
+				if let tableView = view as? UITableView {
+					let indexPath = IndexPath(row: row, section: section)
+
+					// Validate index path
+					guard section < tableView.numberOfSections else {
+						return .error("Section \(section) out of range (0-\(tableView.numberOfSections - 1))", status: .badRequest)
+					}
+
+					let rowCount = tableView.numberOfRows(inSection: section)
+					guard row < rowCount else {
+						return .error("Row \(row) out of range (0-\(rowCount - 1)) in section \(section)", status: .badRequest)
+					}
+
+					// Scroll to cell if requested
+					if shouldScroll {
+						tableView.scrollToRow(at: indexPath, at: .middle, animated: animated)
+					}
+
+					// Select the row
+					tableView.selectRow(at: indexPath, animated: animated, scrollPosition: shouldScroll ? .none : .middle)
+
+					// Trigger the delegate method via performSelector to work around main actor isolation
+					if let delegate = tableView.delegate {
+						let selector = #selector(UITableViewDelegate.tableView(_:didSelectRowAt:))
+						if delegate.responds(to: selector) {
+							_ = delegate.perform(selector, with: tableView, with: indexPath)
+						}
+					}
+
+					result["success"] = true
+					result["tableView"] = [
+						"numberOfSections": tableView.numberOfSections,
+						"numberOfRowsInSection": rowCount,
+					]
+
+					// Try to get cell info
+					if let cell = tableView.cellForRow(at: indexPath) {
+						result["cell"] = [
+							"class": String(describing: type(of: cell)),
+							"address": String(format: "0x%lx", unsafeBitCast(cell, to: Int.self)),
+							"textLabel": cell.textLabel?.text as Any,
+							"detailTextLabel": cell.detailTextLabel?.text as Any,
+							"accessibilityLabel": cell.accessibilityLabel as Any,
+						]
+					}
+				}
+				// Handle UICollectionView
+				else if let collectionView = view as? UICollectionView {
+					let indexPath = IndexPath(item: row, section: section)
+
+					// Validate index path
+					guard section < collectionView.numberOfSections else {
+						return .error("Section \(section) out of range (0-\(collectionView.numberOfSections - 1))", status: .badRequest)
+					}
+
+					let itemCount = collectionView.numberOfItems(inSection: section)
+					guard row < itemCount else {
+						return .error("Item \(row) out of range (0-\(itemCount - 1)) in section \(section)", status: .badRequest)
+					}
+
+					// Scroll to cell if requested
+					if shouldScroll {
+						collectionView.scrollToItem(at: indexPath, at: .centeredVertically, animated: animated)
+					}
+
+					// Select the item
+					collectionView.selectItem(at: indexPath, animated: animated, scrollPosition: shouldScroll ? [] : .centeredVertically)
+
+					// Trigger the delegate method via performSelector to work around main actor isolation
+					if let delegate = collectionView.delegate {
+						let selector = #selector(UICollectionViewDelegate.collectionView(_:didSelectItemAt:))
+						if delegate.responds(to: selector) {
+							_ = delegate.perform(selector, with: collectionView, with: indexPath)
+						}
+					}
+
+					result["success"] = true
+					result["collectionView"] = [
+						"numberOfSections": collectionView.numberOfSections,
+						"numberOfItemsInSection": itemCount,
+					]
+
+					// Try to get cell info
+					if let cell = collectionView.cellForItem(at: indexPath) {
+						result["cell"] = [
+							"class": String(describing: type(of: cell)),
+							"address": String(format: "0x%lx", unsafeBitCast(cell, to: Int.self)),
+							"accessibilityLabel": cell.accessibilityLabel as Any,
+						]
+					}
+				}
+				else {
+					return .error("View at address is not a UITableView or UICollectionView (found: \(type(of: view)))", status: .badRequest)
 				}
 
 				return .json(result)
