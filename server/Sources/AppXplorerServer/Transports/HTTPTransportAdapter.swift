@@ -51,10 +51,12 @@ public class HTTPTransportAdapter: TransportAdapter {
 
 	/// Convert Swifter HttpRequest to our Request
 	private func convertRequest(_ httpRequest: HttpRequest) -> Request {
-		// Parse query parameters
+		// Parse query parameters (URL-decode both keys and values)
 		var queryParams: [String: String] = [:]
 		for param in httpRequest.queryParams {
-			queryParams[param.0] = param.1
+			let key = param.0.removingPercentEncoding ?? param.0
+			let value = param.1.removingPercentEncoding ?? param.1
+			queryParams[key] = value
 		}
 
 		// Parse headers as metadata
