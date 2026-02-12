@@ -179,7 +179,7 @@ public enum InfoEndpoints {
 	}
 
 	#if canImport(UIKit)
-		/// Capture a screenshot of the main app window
+		/// Capture a screenshot of all windows
 		/// Must be called on the main thread
 		private static func captureScreenshot(imageFormat: String, quality: CGFloat, scale: CGFloat) -> Data? {
 			// Get the key window scene
@@ -195,19 +195,14 @@ public enum InfoEndpoints {
 				return nil
 			}
 
-			// Find the main application window (key window or first normal-level window)
-			// Exclude keyboard windows and system windows which can cause black screenshots
-			let allWindows: [UIWindow] = windowScene.windows
-			let mainWindow: UIWindow? = allWindows.first(where: { $0.isKeyWindow && $0.windowLevel == .normal })
-				?? allWindows.first(where: { $0.windowLevel == .normal && !$0.isHidden })
-				?? allWindows.first(where: { !$0.isHidden })
+			let windows: [UIWindow] = windowScene.windows.sorted { $0.windowLevel.rawValue < $1.windowLevel.rawValue }
 
-			guard let window = mainWindow else {
+			guard !windows.isEmpty else {
 				return nil
 			}
 
 			// Get screen bounds
-			let screenBounds: CGRect = window.bounds
+			let screenBounds: CGRect = windowScene.screen.bounds
 			let screenScale: CGFloat = windowScene.screen.scale * scale
 
 			// Create image context
@@ -222,8 +217,12 @@ public enum InfoEndpoints {
 				UIColor.white.setFill()
 				context.fill(screenBounds)
 
-				// Render the main window
-				window.drawHierarchy(in: window.bounds, afterScreenUpdates: false)
+				// Render each window in order
+				for window in windows {
+					if !window.isHidden, window.alpha > 0 {
+						window.drawHierarchy(in: window.bounds, afterScreenUpdates: false)
+					}
+				}
 			}
 
 			// Convert to requested format
