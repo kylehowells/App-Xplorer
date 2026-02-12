@@ -51,15 +51,23 @@ class MainTabBarController: UITabBarController {
 	}
 
 	private func startServer() {
-		self.server = AppXplorerServer.withHTTP(port: 8080)
+		// Try port 8080 first, fallback to 8081 if unavailable
+		let ports: [UInt16] = [8080, 8081]
 
-		do {
-			try self.server?.start()
-			print("Server started on port 8080")
+		for port in ports {
+			self.server = AppXplorerServer.withHTTP(port: port)
+
+			do {
+				try self.server?.start()
+				print("Server started on port \(port)")
+				return
+			}
+			catch {
+				print("Failed to start server on port \(port): \(error)")
+			}
 		}
-		catch {
-			print("Failed to start server: \(error)")
-		}
+
+		print("Failed to start server on any port")
 	}
 }
 
