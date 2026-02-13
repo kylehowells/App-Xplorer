@@ -88,8 +88,8 @@ Apps can pipe their logs to App-Xplorer for remote viewing:
 
 ```swift
 // In your app
-AppXplorerServer.log.log("User logged in", type: "auth")
-AppXplorerServer.log.log("API request failed", type: "network")
+AppXplorerServer.log("User logged in", type: "auth")
+AppXplorerServer.log("API request failed", type: "network")
 
 // Then query via API
 // GET /logs/?type=network&match=%25error%25&limit=50
