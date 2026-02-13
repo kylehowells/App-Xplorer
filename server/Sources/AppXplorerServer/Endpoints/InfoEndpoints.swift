@@ -195,7 +195,15 @@ public enum InfoEndpoints {
 				return nil
 			}
 
-			let windows: [UIWindow] = windowScene.windows.sorted { $0.windowLevel.rawValue < $1.windowLevel.rawValue }
+			// Filter out system windows that can cause black screenshots when rendered
+			// UITextEffectsWindow is used for keyboard and renders as black/opaque when captured
+			let windows: [UIWindow] = windowScene.windows
+				.filter { window in
+					let className = String(describing: type(of: window))
+					// Exclude keyboard/text effects windows that cause black screenshots
+					return className != "UITextEffectsWindow"
+				}
+				.sorted { $0.windowLevel.rawValue < $1.windowLevel.rawValue }
 
 			guard !windows.isEmpty else {
 				return nil
