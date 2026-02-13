@@ -169,16 +169,16 @@ public class AppXplorerServer {
 	/// ```swift
 	/// // In your app's logging setup
 	/// debugLogMonitor = { message in
-	///     AppXplorerServer.log.info(message)
+	///     AppXplorerServer.log.log(message)
 	/// }
 	/// ```
 	public static var log: LogStore {
 		return LogStore.shared
 	}
 
-	/// Convenience method to log a message at info level
-	public static func log(_ message: String, level: LogLevel = .info) {
-		LogStore.shared.log(message, level: level)
+	/// Convenience method to log a message with optional type
+	public static func log(_ message: String, type: String = "") {
+		LogStore.shared.log(message, type: type)
 	}
 
 	// MARK: - Helpers

@@ -2,13 +2,13 @@ import Foundation
 
 // MARK: - LogEndpoints
 
-/// Endpoints for log ingestion and retrieval
+/// Endpoints for log retrieval
+/// Logs are ingested via the Swift API: AppXplorerServer.log.log("message", type: "network")
 public enum LogEndpoints {
 	/// Create a router for log endpoints
 	public static func createRouter() -> RequestHandler {
-		let handler = RequestHandler(description: "Log ingestion and retrieval. Apps can send logs here for remote viewing.")
+		let handler = RequestHandler(description: "Log retrieval. Apps send logs via AppXplorerServer.log.log() API, then retrieve them here.")
 
-		self.registerIngest(with: handler)
 		self.registerFetch(with: handler)
 		self.registerInfo(with: handler)
 		self.registerClear(with: handler)
@@ -22,46 +22,6 @@ public enum LogEndpoints {
 		formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
 		return formatter
 	}()
-
-	// MARK: - Ingest
-
-	private static func registerIngest(with handler: RequestHandler) {
-		handler.register(
-			"/ingest",
-			description: "Ingest a log entry. Send log messages from your app to be stored and retrieved later.",
-			parameters: [
-				ParameterInfo(
-					name: "text",
-					description: "The log message text",
-					required: true,
-					examples: ["User logged in", "Error: Connection failed"]
-				),
-				ParameterInfo(
-					name: "level",
-					description: "Log level/severity",
-					required: false,
-					defaultValue: "info",
-					examples: ["debug", "info", "warning", "error", "critical"]
-				),
-			],
-			runsOnMainThread: false
-		) { request in
-			guard let text = request.queryParams["text"], !text.isEmpty else {
-				return .error("Missing required parameter: text", status: .badRequest)
-			}
-
-			let levelName = request.queryParams["level"] ?? "info"
-			let level = LogLevel(name: levelName) ?? .info
-
-			LogStore.shared.log(text, level: level)
-
-			return .json([
-				"success": true,
-				"level": level.name,
-				"count": LogStore.shared.count(),
-			])
-		}
-	}
 
 	// MARK: - Fetch
 
@@ -83,10 +43,10 @@ public enum LogEndpoints {
 					examples: ["2024-01-15T12:00:00Z"]
 				),
 				ParameterInfo(
-					name: "level",
-					description: "Minimum log level to include",
+					name: "type",
+					description: "Filter by log type (exact match)",
 					required: false,
-					examples: ["debug", "info", "warning", "error", "critical"]
+					examples: ["network", "auth", "error"]
 				),
 				ParameterInfo(
 					name: "match",
@@ -135,10 +95,7 @@ public enum LogEndpoints {
 				options.endTime = self.isoFormatter.date(from: endStr)
 			}
 
-			if let levelStr = request.queryParams["level"] {
-				options.minLevel = LogLevel(name: levelStr)
-			}
-
+			options.type = request.queryParams["type"]
 			options.textPattern = request.queryParams["match"]
 
 			if let limitStr = request.queryParams["limit"], let limit = Int(limitStr) {
@@ -163,12 +120,15 @@ public enum LogEndpoints {
 			if format.lowercased() == "json" {
 				// Return as JSON array
 				let jsonEntries: [[String: Any]] = entries.map { entry in
-					[
+					var obj: [String: Any] = [
 						"id": entry.id,
 						"time": self.isoFormatter.string(from: entry.timestamp),
-						"level": entry.level.name,
 						"text": entry.text,
 					]
+					if !entry.type.isEmpty {
+						obj["type"] = entry.type
+					}
+					return obj
 				}
 				return .json([
 					"count": entries.count,
@@ -194,12 +154,14 @@ public enum LogEndpoints {
 				}
 
 				for entry in entries {
-					let jsonObj: [String: Any] = [
+					var jsonObj: [String: Any] = [
 						"id": entry.id,
 						"time": self.isoFormatter.string(from: entry.timestamp),
-						"level": entry.level.name,
 						"text": entry.text,
 					]
+					if !entry.type.isEmpty {
+						jsonObj["type"] = entry.type
+					}
 					if let data = try? JSONSerialization.data(withJSONObject: jsonObj, options: [.sortedKeys]),
 					   let line = String(data: data, encoding: .utf8)
 					{

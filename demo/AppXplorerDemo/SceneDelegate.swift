@@ -1,4 +1,5 @@
 import UIKit
+import AppXplorerServer
 
 class SceneDelegate: UIResponder, UIWindowSceneDelegate {
 	var window: UIWindow?
@@ -8,6 +9,8 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
 		willConnectTo session: UISceneSession,
 		options connectionOptions: UIScene.ConnectionOptions
 	) {
+		AppXplorerServer.log("Scene willConnectTo session", type: "lifecycle")
+
 		guard let windowScene = (scene as? UIWindowScene)
 		else {
 			return
@@ -16,5 +19,7 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
 		self.window = UIWindow(windowScene: windowScene)
 		self.window?.rootViewController = MainTabBarController()
 		self.window?.makeKeyAndVisible()
+
+		AppXplorerServer.log("Window created and made visible", type: "lifecycle")
 	}
 }

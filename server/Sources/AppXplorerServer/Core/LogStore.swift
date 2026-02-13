@@ -1,51 +1,19 @@
 import Foundation
 import SQLite3
 
-// MARK: - LogLevel
-
-/// Log severity level
-public enum LogLevel: Int, Sendable, Codable {
-	case debug = 0
-	case info = 1
-	case warning = 2
-	case error = 3
-	case critical = 4
-
-	public var name: String {
-		switch self {
-			case .debug: return "debug"
-			case .info: return "info"
-			case .warning: return "warning"
-			case .error: return "error"
-			case .critical: return "critical"
-		}
-	}
-
-	public init?(name: String) {
-		switch name.lowercased() {
-			case "debug": self = .debug
-			case "info": self = .info
-			case "warning", "warn": self = .warning
-			case "error": self = .error
-			case "critical", "fatal": self = .critical
-			default: return nil
-		}
-	}
-}
-
 // MARK: - LogEntry
 
 /// A single log entry
 public struct LogEntry: Sendable {
 	public let id: Int64
 	public let timestamp: Date
-	public let level: LogLevel
+	public let type: String
 	public let text: String
 
-	public init(id: Int64, timestamp: Date, level: LogLevel, text: String) {
+	public init(id: Int64, timestamp: Date, type: String, text: String) {
 		self.id = id
 		self.timestamp = timestamp
-		self.level = level
+		self.type = type
 		self.text = text
 	}
 }
@@ -74,13 +42,6 @@ public final class LogStore: @unchecked Sendable {
 	private static let isoFormatter: ISO8601DateFormatter = {
 		let formatter = ISO8601DateFormatter()
 		formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-		return formatter
-	}()
-
-	/// Formatter for session ID (filesystem-safe)
-	private static let sessionIdFormatter: ISO8601DateFormatter = {
-		let formatter = ISO8601DateFormatter()
-		formatter.formatOptions = [.withFullDate, .withTime, .withColonSeparatorInTime]
 		return formatter
 	}()
 
@@ -127,11 +88,11 @@ public final class LogStore: @unchecked Sendable {
 			CREATE TABLE IF NOT EXISTS logs (
 				id INTEGER PRIMARY KEY AUTOINCREMENT,
 				timestamp TEXT NOT NULL,
-				level INTEGER NOT NULL DEFAULT 1,
+				type TEXT NOT NULL DEFAULT '',
 				text TEXT NOT NULL
 			);
 			CREATE INDEX IF NOT EXISTS idx_logs_timestamp ON logs(timestamp);
-			CREATE INDEX IF NOT EXISTS idx_logs_level ON logs(level);
+			CREATE INDEX IF NOT EXISTS idx_logs_type ON logs(type);
 			"""
 
 		var errMsg: UnsafeMutablePointer<CChar>?
@@ -155,33 +116,26 @@ public final class LogStore: @unchecked Sendable {
 
 	// MARK: - Writing Logs
 
-	/// Add a log entry
-	public func log(_ text: String, level: LogLevel = .info) {
+	/// Add a log entry with optional freeform type
+	public func log(_ text: String, type: String = "") {
 		self.lock.lock()
 		defer { self.lock.unlock() }
 
 		guard let db = self.db else { return }
 
 		let timestamp = Self.isoFormatter.string(from: Date())
-		let sql = "INSERT INTO logs (timestamp, level, text) VALUES (?, ?, ?)"
+		let sql = "INSERT INTO logs (timestamp, type, text) VALUES (?, ?, ?)"
 
 		var stmt: OpaquePointer?
 		guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return }
 		defer { sqlite3_finalize(stmt) }
 
 		sqlite3_bind_text(stmt, 1, timestamp, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
-		sqlite3_bind_int(stmt, 2, Int32(level.rawValue))
+		sqlite3_bind_text(stmt, 2, type, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
 		sqlite3_bind_text(stmt, 3, text, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
 
 		sqlite3_step(stmt)
 	}
-
-	/// Convenience methods for different log levels
-	public func debug(_ text: String) { self.log(text, level: .debug) }
-	public func info(_ text: String) { self.log(text, level: .info) }
-	public func warning(_ text: String) { self.log(text, level: .warning) }
-	public func error(_ text: String) { self.log(text, level: .error) }
-	public func critical(_ text: String) { self.log(text, level: .critical) }
 
 	// MARK: - Reading Logs
 
@@ -189,7 +143,7 @@ public final class LogStore: @unchecked Sendable {
 	public struct QueryOptions {
 		public var startTime: Date?
 		public var endTime: Date?
-		public var minLevel: LogLevel?
+		public var type: String?         // Exact type match
 		public var textPattern: String?  // SQL LIKE pattern (e.g., "%error%")
 		public var limit: Int?
 		public var offset: Int?
@@ -198,7 +152,7 @@ public final class LogStore: @unchecked Sendable {
 		public init(
 			startTime: Date? = nil,
 			endTime: Date? = nil,
-			minLevel: LogLevel? = nil,
+			type: String? = nil,
 			textPattern: String? = nil,
 			limit: Int? = nil,
 			offset: Int? = nil,
@@ -206,7 +160,7 @@ public final class LogStore: @unchecked Sendable {
 		) {
 			self.startTime = startTime
 			self.endTime = endTime
-			self.minLevel = minLevel
+			self.type = type
 			self.textPattern = textPattern
 			self.limit = limit
 			self.offset = offset
@@ -222,7 +176,7 @@ public final class LogStore: @unchecked Sendable {
 		guard let db = self.db else { return [] }
 
 		var conditions: [String] = []
-		var bindings: [(Int32, Any)] = []
+		var bindings: [(Int32, String)] = []
 		var bindIndex: Int32 = 1
 
 		// Build WHERE conditions
@@ -238,9 +192,9 @@ public final class LogStore: @unchecked Sendable {
 			bindIndex += 1
 		}
 
-		if let minLevel = options.minLevel {
-			conditions.append("level >= ?")
-			bindings.append((bindIndex, minLevel.rawValue))
+		if let type = options.type, !type.isEmpty {
+			conditions.append("type = ?")
+			bindings.append((bindIndex, type))
 			bindIndex += 1
 		}
 
@@ -251,7 +205,7 @@ public final class LogStore: @unchecked Sendable {
 		}
 
 		// Build query
-		var sql = "SELECT id, timestamp, level, text FROM logs"
+		var sql = "SELECT id, timestamp, type, text FROM logs"
 		if !conditions.isEmpty {
 			sql += " WHERE " + conditions.joined(separator: " AND ")
 		}
@@ -275,12 +229,7 @@ public final class LogStore: @unchecked Sendable {
 
 		// Bind parameters
 		for (index, value) in bindings {
-			if let stringValue = value as? String {
-				sqlite3_bind_text(stmt, index, stringValue, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
-			}
-			else if let intValue = value as? Int {
-				sqlite3_bind_int(stmt, index, Int32(intValue))
-			}
+			sqlite3_bind_text(stmt, index, value, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
 		}
 
 		// Fetch results
@@ -288,13 +237,12 @@ public final class LogStore: @unchecked Sendable {
 		while sqlite3_step(stmt) == SQLITE_ROW {
 			let id = sqlite3_column_int64(stmt, 0)
 			let timestampStr = String(cString: sqlite3_column_text(stmt, 1))
-			let levelRaw = Int(sqlite3_column_int(stmt, 2))
+			let type = String(cString: sqlite3_column_text(stmt, 2))
 			let text = String(cString: sqlite3_column_text(stmt, 3))
 
 			let timestamp = Self.isoFormatter.date(from: timestampStr) ?? Date()
-			let level = LogLevel(rawValue: levelRaw) ?? .info
 
-			entries.append(LogEntry(id: id, timestamp: timestamp, level: level, text: text))
+			entries.append(LogEntry(id: id, timestamp: timestamp, type: type, text: text))
 		}
 
 		return entries

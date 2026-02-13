@@ -8,6 +8,7 @@ class MainTabBarController: UITabBarController {
 
 	override func viewDidLoad() {
 		super.viewDidLoad()
+		AppXplorerServer.log("MainTabBarController viewDidLoad", type: "lifecycle")
 
 		// Create tab view controllers
 		let homeVC = HomeViewController()
@@ -60,14 +61,17 @@ class MainTabBarController: UITabBarController {
 			do {
 				try self.server?.start()
 				print("Server started on port \(port)")
+				AppXplorerServer.log("Server started on port \(port)", type: "server")
 				return
 			}
 			catch {
 				print("Failed to start server on port \(port): \(error)")
+				AppXplorerServer.log("Failed to start on port \(port): \(error)", type: "error")
 			}
 		}
 
 		print("Failed to start server on any port")
+		AppXplorerServer.log("Failed to start server on any port", type: "error")
 	}
 }
 
@@ -113,6 +117,7 @@ class HomeViewController: UIViewController {
 
 	override func viewDidLoad() {
 		super.viewDidLoad()
+		AppXplorerServer.log("HomeViewController viewDidLoad", type: "lifecycle")
 		self.view.backgroundColor = .systemBackground
 
 		self.view.addSubview(self.titleLabel)
@@ -153,6 +158,7 @@ class ControlsViewController: UIViewController {
 
 	override func viewDidLoad() {
 		super.viewDidLoad()
+		AppXplorerServer.log("ControlsViewController viewDidLoad", type: "lifecycle")
 		self.view.backgroundColor = .systemBackground
 
 		self.view.addSubview(self.scrollView)
@@ -303,31 +309,41 @@ class ControlsViewController: UIViewController {
 	@objc private func primaryButtonTapped() {
 		self.tapCount += 1
 		self.tapCountLabel.text = "Taps: \(self.tapCount)"
+		AppXplorerServer.log("Primary button tapped (count: \(self.tapCount))", type: "ui")
 	}
 
 	@objc private func showAlert() {
+		AppXplorerServer.log("Delete button tapped - showing alert", type: "ui")
 		let alert = UIAlertController(title: "Delete?", message: "Are you sure?", preferredStyle: .alert)
-		alert.addAction(UIAlertAction(title: "Cancel", style: .cancel))
-		alert.addAction(UIAlertAction(title: "Delete", style: .destructive))
+		alert.addAction(UIAlertAction(title: "Cancel", style: .cancel) { _ in
+			AppXplorerServer.log("Delete alert cancelled", type: "ui")
+		})
+		alert.addAction(UIAlertAction(title: "Delete", style: .destructive) { _ in
+			AppXplorerServer.log("Delete confirmed", type: "ui")
+		})
 		self.present(alert, animated: true)
 	}
 
 	@objc private func switchChanged(_ sender: UISwitch) {
 		self.switchStatusLabel.text = sender.isOn ? "ON" : "OFF"
 		self.switchStatusLabel.textColor = sender.isOn ? .systemGreen : .systemRed
+		AppXplorerServer.log("Switch changed to: \(sender.isOn ? "ON" : "OFF")", type: "ui")
 	}
 
 	@objc private func sliderChanged(_ sender: UISlider) {
 		self.sliderValueLabel.text = "\(Int(sender.value))"
+		AppXplorerServer.log("Slider changed to: \(Int(sender.value))", type: "ui")
 	}
 
 	@objc private func stepperChanged(_ sender: UIStepper) {
 		self.stepperValueLabel.text = "\(Int(sender.value))"
+		AppXplorerServer.log("Stepper changed to: \(Int(sender.value))", type: "ui")
 	}
 
 	@objc private func segmentChanged(_ sender: UISegmentedControl) {
 		let titles = ["Small", "Medium", "Large"]
 		self.segmentedLabel.text = "Selected: \(titles[sender.selectedSegmentIndex])"
+		AppXplorerServer.log("Segment changed to: \(titles[sender.selectedSegmentIndex])", type: "ui")
 	}
 }
 
@@ -346,6 +362,7 @@ class FormsViewController: UIViewController {
 
 	override func viewDidLoad() {
 		super.viewDidLoad()
+		AppXplorerServer.log("FormsViewController viewDidLoad", type: "lifecycle")
 		self.view.backgroundColor = .systemBackground
 
 		self.view.addSubview(self.scrollView)
@@ -499,6 +516,7 @@ class FormsViewController: UIViewController {
 		Search: \(self.searchBar.text ?? "")
 		"""
 		self.outputLabel.textColor = .systemGreen
+		AppXplorerServer.log("Form submitted - Name: \(self.nameField.text ?? ""), Email: \(self.emailField.text ?? "")", type: "form")
 	}
 }
 
@@ -517,6 +535,7 @@ class ListViewController: UIViewController, UITableViewDataSource, UITableViewDe
 
 	override func viewDidLoad() {
 		super.viewDidLoad()
+		AppXplorerServer.log("ListViewController viewDidLoad", type: "lifecycle")
 		self.title = "Fruit List"
 		self.view.backgroundColor = .systemBackground
 
@@ -588,6 +607,7 @@ class ListViewController: UIViewController, UITableViewDataSource, UITableViewDe
 		let fruit = self.items[indexPath.row]
 		self.selectedLabel.text = "Selected: \(fruit)"
 		self.selectedLabel.textColor = .systemGreen
+		AppXplorerServer.log("Table row selected: \(fruit) (index: \(indexPath.row))", type: "ui")
 	}
 }
 
@@ -618,6 +638,7 @@ class CollectionViewController: UIViewController, UICollectionViewDataSource, UI
 
 	override func viewDidLoad() {
 		super.viewDidLoad()
+		AppXplorerServer.log("CollectionViewController viewDidLoad", type: "lifecycle")
 		self.title = "Color Grid"
 		self.view.backgroundColor = .systemBackground
 
@@ -693,6 +714,7 @@ class CollectionViewController: UIViewController, UICollectionViewDataSource, UI
 		let colorInfo = self.colors[indexPath.item]
 		self.selectedLabel.text = "Selected: \(colorInfo.name)"
 		self.selectedLabel.textColor = colorInfo.color
+		AppXplorerServer.log("Collection item selected: \(colorInfo.name) (index: \(indexPath.item))", type: "ui")
 
 		// Show a brief animation
 		if let cell = collectionView.cellForItem(at: indexPath) {
