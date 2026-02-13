@@ -66,7 +66,18 @@ class MainTabBarController: UITabBarController {
 
 		for port in ports {
 			do {
-				let (server, irohTransport) = try await AppXplorerServer.withHTTPAndIroh(httpPort: port)
+				// Create server with HTTP and Iroh transports
+				let server = AppXplorerServer()
+
+				// Add HTTP transport
+				let httpTransport = HTTPTransportAdapter(port: port)
+				server.addTransport(httpTransport)
+
+				// Create Iroh transport and add it to the server
+				let tempDir = FileManager.default.temporaryDirectory.appendingPathComponent("appxplorer-iroh-\(ProcessInfo.processInfo.processIdentifier)")
+				let irohTransport = IrohTransportAdapter(storagePath: tempDir.path)
+				server.addTransport(irohTransport)
+
 				self.server = server
 				self.irohTransport = irohTransport
 
