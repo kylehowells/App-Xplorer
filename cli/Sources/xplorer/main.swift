@@ -56,19 +56,13 @@ struct HTTPTransport: Transport {
 
 #if IROH_ENABLED
 
-/// Iroh P2P transport implementation
+/// Iroh P2P transport implementation using QUIC streams
 class IrohTransport: Transport {
 	/// The Iroh node
 	private var node: Iroh?
 
-	/// The gossip sender
-	private var sender: Sender?
-
-	/// Pending response continuations by request ID
-	private var pendingRequests: [String: CheckedContinuation<(Data, Int), Error>] = [:]
-
-	/// Lock for thread safety
-	private let lock = NSLock()
+	/// The connection to the server
+	private var connection: Connection?
 
 	/// The peer's node ID
 	let peerNodeId: String
@@ -76,12 +70,16 @@ class IrohTransport: Transport {
 	/// The peer's relay URL (optional, for faster connection)
 	let peerRelayUrl: String?
 
-	/// The RPC topic (must match server)
-	private static let topicHex = "a1b2c3d4e5f6789012345678901234567890123456789012345678901234abcd"
+	/// The peer's direct addresses (optional, for faster connection)
+	let peerDirectAddresses: [String]
 
-	init(nodeId: String, relayUrl: String? = nil) {
+	/// ALPN protocol identifier (must match server)
+	private static let alpn: Data = "app-xplorer/1".data(using: .utf8)!
+
+	init(nodeId: String, relayUrl: String? = nil, directAddresses: [String] = []) {
 		self.peerNodeId = nodeId
 		self.peerRelayUrl = relayUrl
+		self.peerDirectAddresses = directAddresses
 	}
 
 	/// Connect to the peer
@@ -92,56 +90,44 @@ class IrohTransport: Transport {
 		try? FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
 
 		fputs("Connecting via Iroh...\n", stderr)
+		fputs("Creating node at \(tempDir.path)...\n", stderr)
 
 		let node = try await Iroh.persistent(path: tempDir.path)
 		self.node = node
 
 		// Wait for network
+		fputs("Waiting for network...\n", stderr)
 		try await node.net().waitOnline()
 
-		// Add peer info if relay URL is provided
-		if let relayUrl = peerRelayUrl {
-			let peerPubkey = try PublicKey.fromString(s: peerNodeId)
-			let peerAddr = NodeAddr(nodeId: peerPubkey, derpUrl: relayUrl, addresses: [])
-			try node.net().addNodeAddr(nodeAddr: peerAddr)
-		}
+		let myId = node.net().nodeId()
+		fputs("Local node ID: \(myId.prefix(16))...\n", stderr)
 
-		// Subscribe to the RPC topic with peer as bootstrap
-		let topic = Self.hexToData(Self.topicHex)
-		let callback = IrohResponseCallback(transport: self)
+		// Build peer address
+		let peerPubkey = try PublicKey.fromString(s: peerNodeId)
+		let peerAddr = NodeAddr(nodeId: peerPubkey, derpUrl: peerRelayUrl, addresses: peerDirectAddresses)
 
-		let sender = try await node.gossip().subscribe(
-			topic: topic,
-			bootstrap: [peerNodeId],
-			cb: callback
-		)
+		fputs("Peer relay URL: \(peerRelayUrl ?? "none")\n", stderr)
+		fputs("Peer direct addresses: \(peerDirectAddresses)\n", stderr)
 
-		self.sender = sender
+		// Add peer to discovery
+		try node.net().addNodeAddr(nodeAddr: peerAddr)
+		fputs("Added peer to discovery\n", stderr)
 
-		// Wait for peer connection
-		fputs("Waiting for peer connection...\n", stderr)
-		try await waitForPeer(timeout: 30.0)
+		// Get endpoint and connect
+		let endpoint = node.node().endpoint()
+		fputs("Connecting to peer \(peerNodeId.prefix(16))...\n", stderr)
+		fputs("ALPN: \(Array(Self.alpn))\n", stderr)
+
+		let conn = try await endpoint.connect(nodeAddr: peerAddr, alpn: Self.alpn)
+		self.connection = conn
 
 		fputs("Connected!\n", stderr)
 	}
 
-	/// Wait for peer to connect
-	private func waitForPeer(timeout: TimeInterval) async throws {
-		let start = Date()
-		while Date().timeIntervalSince(start) < timeout {
-			// Check if we have neighbors
-			// For now, just wait a bit and assume connection
-			try await Task.sleep(nanoseconds: 500_000_000) // 0.5 seconds
-			// In a real implementation, we'd track neighborUp events
-			return
-		}
-		throw CLIError.networkError("Timeout waiting for peer connection")
-	}
-
 	/// Disconnect
 	func disconnect() async {
-		if let sender = sender {
-			try? await sender.cancel()
+		if let conn = connection {
+			try? conn.close(errorCode: 0, reason: Data())
 		}
 		if let node = node {
 			try? await node.node().shutdown()
@@ -149,165 +135,110 @@ class IrohTransport: Transport {
 	}
 
 	func request(path: String) async throws -> (Data, Int) {
-		guard let sender = sender else {
+		guard let conn = connection else {
 			throw CLIError.networkError("Not connected")
 		}
 
-		// Generate unique request ID
-		let requestId = UUID().uuidString
+		// Parse path and query params
+		let (cleanPath, queryParams) = Self.parsePathAndQuery(path)
 
-		// Build request message
-		let requestData = IrohMessage.encodeRequest(path: path, requestId: requestId)
+		// Build request
+		let requestData = IrohMessage.encodeRequest(path: cleanPath, queryParams: queryParams)
 
-		// Set up continuation for response
-		return try await withCheckedThrowingContinuation { continuation in
-			lock.lock()
-			pendingRequests[requestId] = continuation
-			lock.unlock()
+		// Open bidirectional stream
+		let stream = try await conn.openBi()
 
-			// Send request
-			Task {
-				do {
-					try await sender.broadcast(msg: requestData)
-				} catch {
-					self.lock.lock()
-					if let cont = self.pendingRequests.removeValue(forKey: requestId) {
-						self.lock.unlock()
-						cont.resume(throwing: error)
-					} else {
-						self.lock.unlock()
-					}
-				}
-			}
+		// Send request (length-prefixed: 4 bytes big-endian length + data)
+		var lengthData = Data(count: 4)
+		let requestLength = UInt32(requestData.count).bigEndian
+		lengthData.withUnsafeMutableBytes { $0.storeBytes(of: requestLength, as: UInt32.self) }
 
-			// Set up timeout
-			Task {
-				try? await Task.sleep(nanoseconds: 30_000_000_000) // 30 seconds
-				self.lock.lock()
-				if let cont = self.pendingRequests.removeValue(forKey: requestId) {
-					self.lock.unlock()
-					cont.resume(throwing: CLIError.networkError("Request timeout"))
-				} else {
-					self.lock.unlock()
-				}
-			}
+		try await stream.send().writeAll(buf: lengthData)
+		try await stream.send().writeAll(buf: requestData)
+		try await stream.send().finish()
+
+		// Read response (length-prefixed)
+		let responseLengthBytes = try await stream.recv().readExact(size: 4)
+		let responseLength = UInt32(bigEndian: Data(responseLengthBytes).withUnsafeBytes { $0.load(as: UInt32.self) })
+
+		guard responseLength > 0 && responseLength < 100_000_000 else { // Max 100MB
+			throw CLIError.networkError("Invalid response length: \(responseLength)")
 		}
+
+		let responseBytes = try await stream.recv().readExact(size: UInt32(responseLength))
+		let responseData = Data(responseBytes)
+
+		// Parse response
+		guard let response = IrohMessage.parseResponse(from: responseData) else {
+			throw CLIError.networkError("Failed to parse response")
+		}
+
+		return (response.body, response.statusCode)
 	}
 
-	/// Handle incoming response
-	func handleResponse(_ data: Data, requestId: String, statusCode: Int) {
-		lock.lock()
-		if let continuation = pendingRequests.removeValue(forKey: requestId) {
-			lock.unlock()
-			continuation.resume(returning: (data, statusCode))
-		} else {
-			lock.unlock()
+	/// Parse path and query parameters from a URL-like path string
+	/// e.g. "/userdefaults/get?key=demo.userName" -> ("/userdefaults/get", ["key": "demo.userName"])
+	private static func parsePathAndQuery(_ pathWithQuery: String) -> (String, [String: String]) {
+		guard let questionMarkIndex = pathWithQuery.firstIndex(of: "?") else {
+			return (pathWithQuery, [:])
 		}
-	}
 
-	private static func hexToData(_ hex: String) -> Data {
-		var data = Data(capacity: hex.count / 2)
-		var index = hex.startIndex
-		while index < hex.endIndex {
-			let nextIndex = hex.index(index, offsetBy: 2)
-			if let byte = UInt8(hex[index..<nextIndex], radix: 16) {
-				data.append(byte)
+		let path = String(pathWithQuery[..<questionMarkIndex])
+		let queryString = String(pathWithQuery[pathWithQuery.index(after: questionMarkIndex)...])
+
+		var queryParams: [String: String] = [:]
+		let pairs = queryString.split(separator: "&")
+		for pair in pairs {
+			let parts = pair.split(separator: "=", maxSplits: 1)
+			if parts.count == 2 {
+				let key = String(parts[0]).removingPercentEncoding ?? String(parts[0])
+				let value = String(parts[1]).removingPercentEncoding ?? String(parts[1])
+				queryParams[key] = value
+			} else if parts.count == 1 {
+				let key = String(parts[0]).removingPercentEncoding ?? String(parts[0])
+				queryParams[key] = ""
 			}
-			index = nextIndex
 		}
-		return data
-	}
-}
 
-// MARK: - Iroh Response Callback
-
-private class IrohResponseCallback: GossipMessageCallback {
-	weak var transport: IrohTransport?
-
-	init(transport: IrohTransport) {
-		self.transport = transport
-	}
-
-	func onMessage(msg: Message) async throws {
-		switch msg.type() {
-		case .neighborUp:
-			let peer = msg.asNeighborUp()
-			fputs("[Iroh] Peer connected: \(String(peer.prefix(16)))...\n", stderr)
-
-		case .neighborDown:
-			let peer = msg.asNeighborDown()
-			fputs("[Iroh] Peer disconnected: \(String(peer.prefix(16)))...\n", stderr)
-
-		case .received:
-			let received = msg.asReceived()
-			let data = Data(received.content)
-
-			// Only handle response messages (not requests)
-			if IrohMessage.isResponse(data) {
-				if let (responseData, statusCode, requestId) = IrohMessage.parseResponse(from: data) {
-					transport?.handleResponse(responseData, requestId: requestId, statusCode: statusCode)
-				}
-			}
-
-		case .lagged:
-			fputs("[Iroh] Warning: message queue lagged\n", stderr)
-
-		case .error:
-			let err = msg.asError()
-			fputs("[Iroh] Error: \(err)\n", stderr)
-		}
+		return (path, queryParams)
 	}
 }
 
 // MARK: - Iroh Message
 
-/// Message encoding/decoding for Iroh transport (CLI client side)
+/// Message encoding/decoding for Iroh transport (QUIC stream version)
 enum IrohMessage {
-	private static let requestType: UInt8 = 0
-	private static let responseType: UInt8 = 1
-
-	/// Check if data is a response message
-	static func isResponse(_ data: Data) -> Bool {
-		guard let first = data.first else { return false }
-		return first == responseType
+	struct ParsedResponse {
+		let body: Data
+		let statusCode: Int
+		let contentType: String
 	}
 
-	/// Encode a request
-	static func encodeRequest(path: String, requestId: String, queryParams: [String: String] = [:]) -> Data {
+	/// Encode a request to JSON
+	static func encodeRequest(path: String, queryParams: [String: String] = [:]) -> Data {
 		var json: [String: Any] = [
-			"path": path,
-			"request_id": requestId
+			"path": path
 		]
 
 		if !queryParams.isEmpty {
 			json["query"] = queryParams
 		}
 
-		var data = Data([requestType])
-		if let jsonData = try? JSONSerialization.data(withJSONObject: json) {
-			data.append(jsonData)
-		}
-
-		return data
+		return (try? JSONSerialization.data(withJSONObject: json)) ?? Data()
 	}
 
-	/// Parse a response
-	/// Returns (body data, status code, request ID)
-	static func parseResponse(from data: Data) -> (Data, Int, String)? {
-		guard data.count > 1, data.first == responseType else { return nil }
-
-		let jsonData = data.dropFirst()
-
-		guard let json = try? JSONSerialization.jsonObject(with: Data(jsonData)) as? [String: Any],
-			  let requestId = json["request_id"] as? String,
+	/// Parse a response from JSON
+	static func parseResponse(from data: Data) -> ParsedResponse? {
+		guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
 			  let statusCode = json["status"] as? Int,
+			  let contentTypeStr = json["content_type"] as? String,
 			  let bodyBase64 = json["body"] as? String,
 			  let body = Data(base64Encoded: bodyBase64)
 		else {
 			return nil
 		}
 
-		return (body, statusCode, requestId)
+		return ParsedResponse(body: body, statusCode: statusCode, contentType: contentTypeStr)
 	}
 }
 
@@ -420,6 +351,7 @@ struct ParsedArgs {
 	var outputFile: String? = nil
 	var showHelp: Bool = false
 	var relayUrl: String? = nil
+	var directAddresses: [String] = []
 
 	/// Whether target is an Iroh node ID
 	var isIroh: Bool {
@@ -469,6 +401,17 @@ func parseArguments(_ args: [String]) -> ParsedArgs {
 			}
 		} else if arg.hasPrefix("--relay=") {
 			result.relayUrl = String(arg.dropFirst(8))
+			i += 1
+		} else if arg == "--addr" {
+			if i + 1 < args.count {
+				result.directAddresses.append(args[i + 1])
+				i += 2
+			} else {
+				fputs("Error: --addr requires a socket address\n", stderr)
+				exit(1)
+			}
+		} else if arg.hasPrefix("--addr=") {
+			result.directAddresses.append(String(arg.dropFirst(7)))
 			i += 1
 		} else if arg.hasPrefix("-") {
 			fputs("Error: Unknown option '\(arg)'\n", stderr)
@@ -522,7 +465,7 @@ func main() async {
 			exit(1)
 		}
 
-		let iroh = IrohTransport(nodeId: nodeId, relayUrl: parsed.relayUrl)
+		let iroh = IrohTransport(nodeId: nodeId, relayUrl: parsed.relayUrl, directAddresses: parsed.directAddresses)
 		do {
 			try await iroh.connect()
 		} catch {

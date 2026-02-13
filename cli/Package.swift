@@ -2,7 +2,7 @@
 import PackageDescription
 
 // Set to true to enable Iroh P2P support (requires built xcframework)
-let enableIroh = false
+let enableIroh = true
 
 let package = Package(
     name: "xplorer",

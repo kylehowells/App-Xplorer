@@ -1,10 +1,12 @@
 import UIKit
 import AppXplorerServer
+import AppXplorerIroh
 
 // MARK: - Main Tab Bar Controller
 
 class MainTabBarController: UITabBarController {
 	private var server: AppXplorerServer?
+	private var irohTransport: IrohTransportAdapter?
 
 	override func viewDidLoad() {
 		super.viewDidLoad()
@@ -52,16 +54,35 @@ class MainTabBarController: UITabBarController {
 	}
 
 	private func startServer() {
+		// Start server with both HTTP and Iroh transports
+		Task {
+			await self.startServerAsync()
+		}
+	}
+
+	private func startServerAsync() async {
 		// Try port 8080 first, fallback to 8081 if unavailable
 		let ports: [UInt16] = [8080, 8081]
 
 		for port in ports {
-			self.server = AppXplorerServer.withHTTP(port: port)
-
 			do {
-				try self.server?.start()
+				let (server, irohTransport) = try await AppXplorerServer.withHTTPAndIroh(httpPort: port)
+				self.server = server
+				self.irohTransport = irohTransport
+
+				try server.start()
+
+				let nodeId = irohTransport.nodeId ?? "unknown"
 				print("Server started on port \(port)")
+				print("Iroh Node ID: \(nodeId)")
+
 				AppXplorerServer.log("Server started on port \(port)", type: "server")
+				AppXplorerServer.log("Iroh Node ID: \(nodeId)", type: "server")
+
+				// Update UI on main thread
+				await MainActor.run {
+					self.updateHomeViewWithIrohInfo(port: port, nodeId: nodeId)
+				}
 				return
 			}
 			catch {
@@ -72,6 +93,13 @@ class MainTabBarController: UITabBarController {
 
 		print("Failed to start server on any port")
 		AppXplorerServer.log("Failed to start server on any port", type: "error")
+	}
+
+	private func updateHomeViewWithIrohInfo(port: UInt16, nodeId: String) {
+		// Find the HomeViewController and update its labels
+		if let homeVC = self.viewControllers?.first as? HomeViewController {
+			homeVC.updateServerInfo(port: port, nodeId: nodeId)
+		}
 	}
 }
 
@@ -88,10 +116,20 @@ class HomeViewController: UIViewController {
 
 	private let statusLabel: UILabel = {
 		let label: UILabel = .init()
-		label.text = "Server: Running on port 8080"
+		label.text = "Server: Starting..."
 		label.font = UIFont.systemFont(ofSize: 18, weight: .medium)
 		label.textAlignment = .center
-		label.textColor = .systemGreen
+		label.textColor = .systemOrange
+		return label
+	}()
+
+	private let irohLabel: UILabel = {
+		let label: UILabel = .init()
+		label.text = "Iroh: Connecting..."
+		label.font = UIFont.systemFont(ofSize: 14, weight: .regular)
+		label.textAlignment = .center
+		label.textColor = .systemOrange
+		label.numberOfLines = 0
 		return label
 	}()
 
@@ -100,15 +138,18 @@ class HomeViewController: UIViewController {
 		label.text = """
 		Use the CLI to interact with this app:
 
-		xplorer <ip>:8080
-		xplorer <ip>:8080 info
-		xplorer <ip>:8080 hierarchy/views
-		xplorer <ip>:8080 interact/tap?address=<addr>
+		HTTP:
+		  xplorer <ip>:8080 info
+		  xplorer <ip>:8080 hierarchy/views
+
+		Iroh (P2P):
+		  xplorer iroh:<node_id> info
+		  xplorer iroh:<node_id> screenshot
 
 		Navigate to different tabs to test
 		various UI interactions!
 		"""
-		label.font = UIFont.monospacedSystemFont(ofSize: 14, weight: .regular)
+		label.font = UIFont.monospacedSystemFont(ofSize: 13, weight: .regular)
 		label.textAlignment = .left
 		label.numberOfLines = 0
 		label.textColor = .secondaryLabel
@@ -122,7 +163,20 @@ class HomeViewController: UIViewController {
 
 		self.view.addSubview(self.titleLabel)
 		self.view.addSubview(self.statusLabel)
+		self.view.addSubview(self.irohLabel)
 		self.view.addSubview(self.instructionsLabel)
+	}
+
+	func updateServerInfo(port: UInt16, nodeId: String) {
+		self.statusLabel.text = "HTTP: Running on port \(port)"
+		self.statusLabel.textColor = .systemGreen
+
+		// Truncate node ID for display (first 16 chars)
+		let shortNodeId = String(nodeId.prefix(16)) + "..."
+		self.irohLabel.text = "Iroh: \(shortNodeId)\n(Full ID in console)"
+		self.irohLabel.textColor = .systemGreen
+
+		self.view.setNeedsLayout()
 	}
 
 	override func viewDidLayoutSubviews() {
@@ -137,8 +191,11 @@ class HomeViewController: UIViewController {
 		let statusSize = self.statusLabel.sizeThatFits(CGSize(width: contentWidth, height: .greatestFiniteMagnitude))
 		self.statusLabel.frame = CGRect(x: padding, y: self.titleLabel.frame.maxY + 20, width: contentWidth, height: statusSize.height)
 
+		let irohSize = self.irohLabel.sizeThatFits(CGSize(width: contentWidth, height: .greatestFiniteMagnitude))
+		self.irohLabel.frame = CGRect(x: padding, y: self.statusLabel.frame.maxY + 10, width: contentWidth, height: irohSize.height)
+
 		let instructionsSize = self.instructionsLabel.sizeThatFits(CGSize(width: contentWidth, height: .greatestFiniteMagnitude))
-		self.instructionsLabel.frame = CGRect(x: padding, y: self.statusLabel.frame.maxY + 30, width: contentWidth, height: instructionsSize.height)
+		self.instructionsLabel.frame = CGRect(x: padding, y: self.irohLabel.frame.maxY + 30, width: contentWidth, height: instructionsSize.height)
 	}
 }
 

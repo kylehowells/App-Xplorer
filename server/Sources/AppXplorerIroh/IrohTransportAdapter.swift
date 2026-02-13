@@ -4,10 +4,11 @@ import IrohLib
 
 // MARK: - IrohTransportAdapter
 
-/// Iroh transport adapter for P2P connections
+/// Iroh transport adapter for P2P connections using QUIC streams
 ///
 /// This adapter allows App-Xplorer to accept connections over the Iroh P2P network,
 /// enabling debugging across different networks without requiring direct IP connectivity.
+/// Uses direct QUIC streams instead of gossip for unlimited message sizes.
 ///
 /// Usage:
 /// ```swift
@@ -22,9 +23,6 @@ import IrohLib
 public class IrohTransportAdapter: TransportAdapter {
 	/// The Iroh node instance
 	private var node: Iroh?
-
-	/// The gossip sender for responding to requests
-	private var gossipSender: Sender?
 
 	/// The request handler
 	public var requestHandler: RequestHandler?
@@ -42,9 +40,8 @@ public class IrohTransportAdapter: TransportAdapter {
 		return node?.net().nodeAddr().relayUrl()
 	}
 
-	/// The topic used for request/response communication
-	/// This is a blake3 hash of "app-xplorer-rpc" (pre-computed)
-	private static let topicHex = "a1b2c3d4e5f6789012345678901234567890123456789012345678901234abcd"
+	/// ALPN protocol identifier for App-Xplorer RPC
+	public static let alpn: Data = "app-xplorer/1".data(using: .utf8)!
 
 	/// Storage path for the Iroh node
 	private let storagePath: String
@@ -80,10 +77,11 @@ public class IrohTransportAdapter: TransportAdapter {
 		print("📁 Storage: \(storagePath)")
 
 		// Use semaphore to bridge async startup
+		// Run on a detached task to avoid actor isolation issues
 		let semaphore = DispatchSemaphore(value: 0)
 		var startError: Error?
 
-		Task {
+		Task.detached { [self] in
 			do {
 				try await self.startAsync()
 			} catch {
@@ -111,8 +109,28 @@ public class IrohTransportAdapter: TransportAdapter {
 
 	/// Start the transport (async version)
 	private func startAsync() async throws {
-		// Create persistent node
-		let node = try await Iroh.persistent(path: storagePath)
+		// Create protocol handler for accepting connections
+		let protocolCreator = XplorerProtocolCreator(adapter: self)
+
+		print("[Iroh] ALPN bytes: \(Array(Self.alpn))")
+		print("[Iroh] Registering protocol with ALPN: \(String(data: Self.alpn, encoding: .utf8) ?? "unknown")")
+
+		// Create node options with our custom protocol
+		let options = NodeOptions(
+			gcIntervalMillis: nil,
+			blobEvents: nil,
+			enableDocs: false,
+			ipv4Addr: nil,
+			ipv6Addr: nil,
+			nodeDiscovery: nil,
+			secretKey: nil,
+			protocols: [Self.alpn: protocolCreator]
+		)
+
+		print("[Iroh] Creating node with protocols: \(options.protocols?.keys.map { Array($0) } ?? [])")
+
+		// Create persistent node with our protocol
+		let node = try await Iroh.persistentWithOptions(path: storagePath, options: options)
 
 		lock.lock()
 		self.node = node
@@ -128,39 +146,29 @@ public class IrohTransportAdapter: TransportAdapter {
 		if let relay = nodeAddr.relayUrl() {
 			print("🌐 Relay URL: \(relay)")
 		}
-
-		// Subscribe to the RPC topic
-		let topic = Self.hexToData(Self.topicHex)
-		let callback = IrohRequestCallback(adapter: self)
-
-		let sender = try await node.gossip().subscribe(
-			topic: topic,
-			bootstrap: [],
-			cb: callback
-		)
+		print("📍 Getting direct addresses...")
+		let directAddrs = nodeAddr.directAddresses()
+		print("📍 Direct addresses count: \(directAddrs.count)")
+		for addr in directAddrs {
+			print("  - \(addr)")
+		}
+		print("📍 Done with addresses")
 
 		lock.lock()
-		self.gossipSender = sender
 		self.isRunning = true
 		lock.unlock()
 
-		print("✅ Iroh transport ready")
+		print("✅ Iroh transport ready (QUIC streams)")
 		print("📱 Share this node ID with clients: \(nodeId)")
 	}
 
 	/// Stop the transport (async version)
 	private func stopAsync() async {
 		lock.lock()
-		let sender = self.gossipSender
 		let node = self.node
-		self.gossipSender = nil
 		self.node = nil
 		self.isRunning = false
 		lock.unlock()
-
-		if let sender = sender {
-			try? await sender.cancel()
-		}
 
 		if let node = node {
 			try? await node.node().shutdown()
@@ -169,137 +177,131 @@ public class IrohTransportAdapter: TransportAdapter {
 		print("🛑 Iroh transport stopped")
 	}
 
-	// MARK: - Request Handling
+	// MARK: - Connection Handling
 
-	/// Handle an incoming request message
-	func handleRequest(_ data: Data, from peer: String) {
-		guard let handler = requestHandler else {
-			print("[Iroh] No request handler configured")
-			return
-		}
+	/// Handle an incoming connection
+	func handleConnection(_ conn: Connection) async {
+		print("[Iroh] New connection from: \(conn.remoteNodeId().prefix(16))...")
 
-		// Parse the request
-		guard let (request, requestId) = IrohMessage.parseRequest(from: data) else {
-			print("[Iroh] Failed to parse request from \(String(peer.prefix(8)))...")
-			return
-		}
-
-		print("[Iroh] Request from \(String(peer.prefix(8)))...: \(request.path)")
-
-		// Handle the request (runs on main thread for UI access via RequestHandler)
-		let response = handler.handle(request)
-
-		// Send response back
-		Task {
-			await self.sendResponse(response, requestId: requestId, to: peer)
-		}
-	}
-
-	/// Send a response back to the peer
-	private func sendResponse(_ response: Response, requestId: String, to peer: String) async {
-		lock.lock()
-		let sender = self.gossipSender
-		lock.unlock()
-
-		guard let sender = sender else { return }
-
-		let message = IrohMessage.encodeResponse(response, requestId: requestId)
-
+		// Accept bidirectional streams from this connection
 		do {
-			try await sender.broadcast(msg: message)
+			while true {
+				let biStream = try await conn.acceptBi()
+
+				// Handle each stream in its own task
+				Task {
+					await self.handleStream(biStream, from: conn.remoteNodeId())
+				}
+			}
 		} catch {
-			print("[Iroh] Failed to send response: \(error)")
+			print("[Iroh] Connection closed: \(error)")
 		}
 	}
 
-	// MARK: - Helpers
+	/// Handle a single request/response stream
+	private func handleStream(_ stream: BiStream, from peer: String) async {
+		do {
+			// Read request (length-prefixed: 4 bytes big-endian length + data)
+			let lengthBytes = try await stream.recv().readExact(size: 4)
+			let length = UInt32(bigEndian: lengthBytes.withUnsafeBytes { $0.load(as: UInt32.self) })
 
-	private static func hexToData(_ hex: String) -> Data {
-		var data = Data(capacity: hex.count / 2)
-		var index = hex.startIndex
-		while index < hex.endIndex {
-			let nextIndex = hex.index(index, offsetBy: 2)
-			if let byte = UInt8(hex[index..<nextIndex], radix: 16) {
-				data.append(byte)
+			guard length > 0 && length < 100_000_000 else { // Max 100MB
+				print("[Iroh] Invalid request length: \(length)")
+				return
 			}
-			index = nextIndex
+
+			let requestData = try await stream.recv().readExact(size: UInt32(length))
+
+			// Parse and handle request
+			guard let handler = requestHandler else {
+				print("[Iroh] No request handler configured")
+				return
+			}
+
+			guard let request = IrohMessage.parseRequest(from: Data(requestData)) else {
+				print("[Iroh] Failed to parse request")
+				return
+			}
+
+			print("[Iroh] Request from \(peer.prefix(8))...: \(request.path)")
+
+			// Handle the request
+			let response = handler.handle(request)
+
+			// Encode response
+			let responseData = IrohMessage.encodeResponse(response)
+
+			// Send response (length-prefixed)
+			var lengthData = Data(count: 4)
+			let responseLength = UInt32(responseData.count).bigEndian
+			lengthData.withUnsafeMutableBytes { $0.storeBytes(of: responseLength, as: UInt32.self) }
+
+			try await stream.send().writeAll(buf: lengthData)
+			try await stream.send().writeAll(buf: responseData)
+			try await stream.send().finish()
+
+			print("[Iroh] Response sent: \(responseData.count) bytes")
+
+		} catch {
+			print("[Iroh] Stream error: \(error)")
 		}
-		return data
 	}
 }
 
-// MARK: - IrohRequestCallback
+// MARK: - XplorerProtocolCreator
 
-/// Callback handler for incoming gossip messages
-private class IrohRequestCallback: GossipMessageCallback {
+/// Creates protocol handlers for incoming connections
+private class XplorerProtocolCreator: ProtocolCreator {
 	weak var adapter: IrohTransportAdapter?
 
 	init(adapter: IrohTransportAdapter) {
 		self.adapter = adapter
 	}
 
-	func onMessage(msg: Message) async throws {
-		switch msg.type() {
-		case .neighborUp:
-			let peer = msg.asNeighborUp()
-			print("[Iroh] Peer connected: \(String(peer.prefix(16)))...")
+	func create(endpoint: Endpoint) -> ProtocolHandler {
+		print("[Iroh] ProtocolCreator.create called!")
+		return XplorerProtocolHandler(adapter: adapter)
+	}
+}
 
-		case .neighborDown:
-			let peer = msg.asNeighborDown()
-			print("[Iroh] Peer disconnected: \(String(peer.prefix(16)))...")
+// MARK: - XplorerProtocolHandler
 
-		case .received:
-			let received = msg.asReceived()
-			let data = Data(received.content)
+/// Handles incoming connections for the App-Xplorer protocol
+private class XplorerProtocolHandler: ProtocolHandler {
+	weak var adapter: IrohTransportAdapter?
 
-			// Only handle request messages (not our own responses)
-			if IrohMessage.isRequest(data) {
-				adapter?.handleRequest(data, from: received.deliveredFrom)
-			}
+	init(adapter: IrohTransportAdapter?) {
+		self.adapter = adapter
+		print("[Iroh] ProtocolHandler created")
+	}
 
-		case .lagged:
-			print("[Iroh] Warning: message queue lagged")
-
-		case .error:
-			let err = msg.asError()
-			print("[Iroh] Error: \(err)")
+	func accept(conn: Connection) async throws {
+		print("[Iroh] ProtocolHandler.accept called!")
+		guard let adapter = adapter else {
+			print("[Iroh] ERROR: adapter is nil in accept")
+			return
 		}
+		await adapter.handleConnection(conn)
+	}
+
+	func shutdown() async {
+		print("[Iroh] ProtocolHandler.shutdown called")
 	}
 }
 
 // MARK: - IrohMessage
 
-/// Message encoding/decoding for Iroh transport
+/// Message encoding/decoding for Iroh transport (QUIC stream version)
 ///
-/// Message format:
-/// - First byte: message type (0 = request, 1 = response)
-/// - Remaining bytes: JSON payload
+/// Simplified format for streams (no message type byte needed):
+/// Request: JSON with path, query, metadata, body
+/// Response: JSON with status, content_type, body
 public enum IrohMessage {
-	private static let requestType: UInt8 = 0
-	private static let responseType: UInt8 = 1
-
-	/// Check if data is a request message
-	public static func isRequest(_ data: Data) -> Bool {
-		guard let first = data.first else { return false }
-		return first == requestType
-	}
-
-	/// Check if data is a response message
-	public static func isResponse(_ data: Data) -> Bool {
-		guard let first = data.first else { return false }
-		return first == responseType
-	}
 
 	/// Parse a request from data
-	/// Returns the Request and the request ID
-	public static func parseRequest(from data: Data) -> (Request, String)? {
-		guard data.count > 1, data.first == requestType else { return nil }
-
-		let jsonData = data.dropFirst()
-
-		guard let json = try? JSONSerialization.jsonObject(with: Data(jsonData)) as? [String: Any],
-			  let path = json["path"] as? String,
-			  let requestId = json["request_id"] as? String
+	public static func parseRequest(from data: Data) -> Request? {
+		guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+			  let path = json["path"] as? String
 		else {
 			return nil
 		}
@@ -313,21 +315,18 @@ public enum IrohMessage {
 			body = Data(base64Encoded: bodyBase64)
 		}
 
-		let request = Request(
+		return Request(
 			path: path,
 			queryParams: queryParams,
 			body: body,
 			metadata: metadata
 		)
-
-		return (request, requestId)
 	}
 
 	/// Encode a request to data
-	public static func encodeRequest(_ request: Request, requestId: String) -> Data {
+	public static func encodeRequest(_ request: Request) -> Data {
 		var json: [String: Any] = [
-			"path": request.path,
-			"request_id": requestId
+			"path": request.path
 		]
 
 		if !request.queryParams.isEmpty {
@@ -342,40 +341,23 @@ public enum IrohMessage {
 			json["body"] = body.base64EncodedString()
 		}
 
-		var data = Data([requestType])
-		if let jsonData = try? JSONSerialization.data(withJSONObject: json) {
-			data.append(jsonData)
-		}
-
-		return data
+		return (try? JSONSerialization.data(withJSONObject: json)) ?? Data()
 	}
 
 	/// Encode a response to data
-	public static func encodeResponse(_ response: Response, requestId: String) -> Data {
+	public static func encodeResponse(_ response: Response) -> Data {
 		let json: [String: Any] = [
-			"request_id": requestId,
 			"status": response.status.rawValue,
 			"content_type": response.contentType.rawValue,
 			"body": response.body.base64EncodedString()
 		]
 
-		var data = Data([responseType])
-		if let jsonData = try? JSONSerialization.data(withJSONObject: json) {
-			data.append(jsonData)
-		}
-
-		return data
+		return (try? JSONSerialization.data(withJSONObject: json)) ?? Data()
 	}
 
 	/// Parse a response from data
-	/// Returns the Response and the request ID
-	public static func parseResponse(from data: Data) -> (Response, String)? {
-		guard data.count > 1, data.first == responseType else { return nil }
-
-		let jsonData = data.dropFirst()
-
-		guard let json = try? JSONSerialization.jsonObject(with: Data(jsonData)) as? [String: Any],
-			  let requestId = json["request_id"] as? String,
+	public static func parseResponse(from data: Data) -> Response? {
+		guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
 			  let statusCode = json["status"] as? Int,
 			  let contentTypeStr = json["content_type"] as? String,
 			  let bodyBase64 = json["body"] as? String,
@@ -387,7 +369,6 @@ public enum IrohMessage {
 		let status = ResponseStatus(rawValue: statusCode) ?? .internalError
 		let contentType = ContentType(rawValue: contentTypeStr) ?? .binary
 
-		let response = Response(status: status, contentType: contentType, body: body)
-		return (response, requestId)
+		return Response(status: status, contentType: contentType, body: body)
 	}
 }

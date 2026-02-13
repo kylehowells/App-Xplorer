@@ -18,6 +18,10 @@ let package = Package(
 		.library(
 			name: "AppXplorerIroh",
 			targets: ["AppXplorerIroh"]),
+		// Test executable for Iroh transport
+		.executable(
+			name: "IrohTestServer",
+			targets: ["IrohTestServer"]),
 	],
 	dependencies: [
 		// Using Swifter - a lightweight HTTP server that works on iOS
@@ -41,6 +45,18 @@ let package = Package(
 				.product(name: "IrohLib", package: "IrohLib"),
 			],
 			path: "Sources/AppXplorerIroh"),
+		// Test executable for Iroh transport
+		.executableTarget(
+			name: "IrohTestServer",
+			dependencies: [
+				"AppXplorerServer",
+				"AppXplorerIroh",
+			],
+			path: "Sources/IrohTestServer",
+			linkerSettings: [
+				.linkedFramework("SystemConfiguration"),
+				.linkedFramework("Security"),
+			]),
 		.testTarget(
 			name: "AppXplorerServerTests",
 			dependencies: ["AppXplorerServer"]

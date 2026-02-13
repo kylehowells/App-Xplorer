@@ -18,6 +18,8 @@ targets:
       - AppXplorerDemo
     dependencies:
       - package: AppXplorerServer
+      - package: AppXplorerServer
+        product: AppXplorerIroh
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.appxplorer.demo
