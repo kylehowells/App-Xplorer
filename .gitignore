@@ -31,3 +31,7 @@ demo/*.xcodeproj/
 *.o
 *.a
 *.dylib
+
+# Xcode build directories (xcodebuild -derivedDataPath)
+build/
+*/build/
