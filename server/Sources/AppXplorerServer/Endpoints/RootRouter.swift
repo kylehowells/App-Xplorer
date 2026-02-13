@@ -30,6 +30,9 @@ public enum RootRouter {
 
 		let interactRouter: RequestHandler = InteractEndpoints.createRouter()
 		handler.mount("/interact", router: interactRouter)
+
+		let logsRouter: RequestHandler = LogEndpoints.createRouter()
+		handler.mount("/logs", router: logsRouter)
 	}
 
 	// MARK: - Index

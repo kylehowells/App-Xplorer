@@ -160,6 +160,27 @@ public class AppXplorerServer {
 		}
 	}
 
+	// MARK: - Logging
+
+	/// Access the shared log store for the current session
+	/// Use this to send logs from your app that can be retrieved via the /logs API
+	///
+	/// Example integration with a custom logging system:
+	/// ```swift
+	/// // In your app's logging setup
+	/// debugLogMonitor = { message in
+	///     AppXplorerServer.log.info(message)
+	/// }
+	/// ```
+	public static var log: LogStore {
+		return LogStore.shared
+	}
+
+	/// Convenience method to log a message at info level
+	public static func log(_ message: String, level: LogLevel = .info) {
+		LogStore.shared.log(message, level: level)
+	}
+
 	// MARK: - Helpers
 
 	/// Get the device's WiFi IP address
