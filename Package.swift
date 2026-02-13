@@ -4,34 +4,48 @@
 import PackageDescription
 
 let package = Package(
-	name: "AppXplorerServer",
+	name: "AppXplorer",
 	platforms: [
 		.iOS(.v15),
 		.macOS(.v12),
 	],
 	products: [
-		// Products define the executables and libraries a package produces, making them visible to other packages.
+		// Core library - HTTP transport only (lightweight, no external dependencies except Swifter)
 		.library(
 			name: "AppXplorerServer",
 			targets: ["AppXplorerServer"]),
+		// Optional: Iroh P2P transport (adds ~34MB to binary size)
+		.library(
+			name: "AppXplorerIroh",
+			targets: ["AppXplorerIroh"]),
 	],
 	dependencies: [
-		// Using Swifter - a lightweight HTTP server that works on iOS
+		// Swifter - lightweight HTTP server that works on iOS
 		.package(url: "https://github.com/httpswift/swifter.git", .upToNextMajor(from: "1.5.0")),
+		// Iroh P2P networking (only resolved if AppXplorerIroh is used)
+		// TODO: Switch to remote URL once iroh-ffi has a proper release with updated xcframework
+		.package(name: "IrohLib", path: "../iroh-ffi/IrohLib"),
 	],
 	targets: [
-		// Targets are the basic building blocks of a package, defining a module or a test suite.
-		// Targets can depend on other targets in this package and products from dependencies.
+		// Core server with HTTP transport
 		.target(
 			name: "AppXplorerServer",
 			dependencies: [
 				.product(name: "Swifter", package: "swifter"),
 			],
 			path: "server/Sources/AppXplorerServer"),
+		// Iroh P2P transport adapter
+		.target(
+			name: "AppXplorerIroh",
+			dependencies: [
+				"AppXplorerServer",
+				.product(name: "IrohLib", package: "IrohLib"),
+			],
+			path: "iroh-transport/Sources/AppXplorerIroh"),
+		// Tests
 		.testTarget(
 			name: "AppXplorerServerTests",
 			dependencies: ["AppXplorerServer"],
-			path: "server/Tests/AppXplorerServerTests"
-		),
+			path: "server/Tests/AppXplorerServerTests"),
 	]
 )

@@ -10,7 +10,7 @@ let package = Package(
 		.macOS(.v12),
 	],
 	products: [
-		// Products define the executables and libraries a package produces, making them visible to other packages.
+		// Core library - HTTP transport only
 		.library(
 			name: "AppXplorerServer",
 			targets: ["AppXplorerServer"]),
@@ -20,8 +20,7 @@ let package = Package(
 		.package(url: "https://github.com/httpswift/swifter.git", .upToNextMajor(from: "1.5.0")),
 	],
 	targets: [
-		// Targets are the basic building blocks of a package, defining a module or a test suite.
-		// Targets can depend on other targets in this package and products from dependencies.
+		// Core target - HTTP transport
 		.target(
 			name: "AppXplorerServer",
 			dependencies: [
