@@ -52,18 +52,19 @@ Use the CLI or curl to interact with your app:
 ```bash
 # Build the CLI
 cd cli && swift build -c release
+cp .build/release/xplorer /usr/local/bin/
 
 # Get API index (lists all endpoints)
-.build/release/xplorer localhost:8080
+xplorer localhost:8080
 
 # Capture screenshot
-.build/release/xplorer localhost:8080 screenshot -o screen.png
+xplorer localhost:8080 screenshot -o screen.png
 
 # View hierarchy as XML
-.build/release/xplorer localhost:8080 "hierarchy/views?format=xml"
+xplorer localhost:8080 "hierarchy/views?format=xml"
 
 # Tap a button
-.build/release/xplorer localhost:8080 "interact/tap?address=0x12345678"
+xplorer localhost:8080 "interact/tap?address=0x12345678"
 ```
 
 ## API Endpoints
