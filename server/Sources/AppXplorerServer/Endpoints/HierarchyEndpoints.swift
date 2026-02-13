@@ -286,14 +286,18 @@ public enum HierarchyEndpoints {
 					sceneInfo["coordinateSpace"] = self.frameToDict(scene.coordinateSpace.bounds)
 
 					// Add size restrictions
+					let minWidth: CGFloat = scene.sizeRestrictions?.minimumSize.width ?? 0
+					let minHeight: CGFloat = scene.sizeRestrictions?.minimumSize.height ?? 0
+					let maxWidth: CGFloat = scene.sizeRestrictions?.maximumSize.width ?? 0
+					let maxHeight: CGFloat = scene.sizeRestrictions?.maximumSize.height ?? 0
 					sceneInfo["sizeRestrictions"] = [
 						"minimumSize": [
-							"width": scene.sizeRestrictions?.minimumSize.width ?? 0,
-							"height": scene.sizeRestrictions?.minimumSize.height ?? 0,
+							"width": minWidth,
+							"height": minHeight,
 						],
 						"maximumSize": [
-							"width": scene.sizeRestrictions?.maximumSize.width ?? 0,
-							"height": scene.sizeRestrictions?.maximumSize.height ?? 0,
+							"width": maxWidth,
+							"height": maxHeight,
 						],
 					]
 

@@ -6,10 +6,29 @@ This file provides guidance to Claude Code when working with code in this reposi
 
 App-Xplorer is a debugging toolkit for iOS apps consisting of:
 
-1. **server/** - A Swift package that runs inside iOS apps, providing a self-documenting API for remote debugging (screenshots, view hierarchy, files, UserDefaults, etc.)
+1. **server/** - A Swift package that runs inside iOS apps, providing a self-documenting API for remote debugging (screenshots, view hierarchy, files, UserDefaults, permissions, UI interaction, logs, etc.)
 2. **client/** - A Swift client library for connecting to the server
 3. **demo/** - A simple iOS app for testing the server functionality
 4. **cli/** - A command-line interface for interacting with the server
+
+## API Endpoints Overview
+
+The server exposes the following API endpoints:
+
+### Root Endpoints
+- `GET /` - API index and discovery
+- `GET /info` - App and device information
+- `GET /screenshot` - Capture app screenshot
+
+### Sub-Routers
+- `/files/*` - File system access (read/write/delete/list)
+- `/hierarchy/*` - View hierarchy inspection (views, windows, view controllers, responder chain)
+- `/userdefaults/*` - UserDefaults read/write
+- `/permissions/*` - System permission states (photos, camera, location, notifications, etc.)
+- `/interact/*` - UI interaction (tap, type, scroll, swipe, focus/resign, select cells)
+- `/logs/*` - Log ingestion and retrieval (SQLite-backed, JSONL output)
+
+See `server/CLAUDE.md` for full API documentation.
 
 ## Development Guidelines
 

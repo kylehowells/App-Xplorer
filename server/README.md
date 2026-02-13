@@ -267,4 +267,4 @@ See `docs/architecture.md` for details.
 
 ## License
 
-[Your license here]
+MIT License - see [LICENSE](../LICENSE) for details.

@@ -76,21 +76,22 @@ server/
 │   │   ├── Request.swift        # Transport-agnostic request
 │   │   ├── Response.swift       # Transport-agnostic response
 │   │   ├── RequestHandler.swift # Central router
-│   │   └── TransportAdapter.swift # Transport protocol
+│   │   ├── TransportAdapter.swift # Transport protocol
+│   │   ├── LogStore.swift       # SQLite log storage
+│   │   └── SafeAddressLookup.swift # Memory address validation
 │   ├── Endpoints/
 │   │   ├── RootRouter.swift      # Root router configuration
-│   │   ├── InfoEndpoints.swift   # /info, /screenshot, /hierarchy
+│   │   ├── InfoEndpoints.swift   # /info, /screenshot
 │   │   ├── FilesEndpoints.swift  # /files/* sub-router
-│   │   └── UserDefaultsEndpoints.swift # /userdefaults
+│   │   ├── UserDefaultsEndpoints.swift # /userdefaults/*
+│   │   ├── HierarchyEndpoints.swift # /hierarchy/* sub-router
+│   │   ├── PermissionsEndpoints.swift # /permissions/* sub-router
+│   │   ├── InteractEndpoints.swift # /interact/* sub-router
+│   │   └── LogEndpoints.swift    # /logs/* sub-router
 │   └── Transports/
 │       └── HTTPTransportAdapter.swift # HTTP via Swifter
 └── Tests/
     └── AppXplorerServerTests/
-        ├── RequestTests.swift        # Request type tests
-        ├── ResponseTests.swift       # Response type tests
-        ├── RequestHandlerTests.swift # Router and sub-router tests
-        ├── FilesEndpointsTests.swift # /files/* endpoint tests
-        └── RootRouterTests.swift     # Root router integration tests
 ```
 
 ## Usage Example
@@ -105,6 +106,78 @@ server["/custom"] = { request in
     return .json(["hello": "world"])
 }
 ```
+
+## API Reference
+
+### Root Endpoints
+
+- `GET /` - API index and discovery (lists all endpoints)
+- `GET /info` - App bundle info and device info
+- `GET /screenshot` - Capture app screenshot (PNG)
+
+### Sub-Routers
+
+#### `/files/*` - File System Access
+- `GET /files/` - List directory contents
+- `GET /files/read` - Read file content
+- `POST /files/write` - Write file content
+- `DELETE /files/delete` - Delete file
+- `GET /files/containers` - List app containers (documents, library, etc.)
+
+#### `/hierarchy/*` - View Hierarchy Inspection
+- `GET /hierarchy/views` - Complete view hierarchy tree (JSON or XML format)
+- `GET /hierarchy/windows` - List all windows with properties
+- `GET /hierarchy/window-scenes` - List UIWindowScenes with details
+- `GET /hierarchy/view-controllers` - View controller hierarchy
+- `GET /hierarchy/responder-chain` - Responder chain from a view/first responder
+- `GET /hierarchy/first-responder` - Current first responder and path to it
+
+#### `/userdefaults/*` - UserDefaults Access
+- `GET /userdefaults/` - List all UserDefaults keys
+- `GET /userdefaults/get` - Get value for key
+- `POST /userdefaults/set` - Set value for key
+- `DELETE /userdefaults/delete` - Delete key
+
+#### `/permissions/*` - System Permission States
+- `GET /permissions/all` - All permission states (photos, camera, location, etc.)
+- `GET /permissions/list` - List supported permission types
+- `GET /permissions/get?type=X` - Check specific permission
+- `GET /permissions/refresh` - Trigger async permission checks (notifications, siri)
+
+Supported permission types: photos, camera, microphone, contacts, calendar, reminders, location, notifications, health, motion, speech, bluetooth, homekit, medialibrary, siri
+
+#### `/interact/*` - UI Interaction
+- `GET /interact/tap?address=0x...` - Tap a UI element (UIControl or accessibility)
+- `GET /interact/type?text=X` - Type text into first responder or specific view
+- `GET /interact/focus?address=0x...` - Make a view become first responder
+- `GET /interact/resign` - Resign first responder (dismiss keyboard)
+- `GET /interact/scroll?address=0x...` - Scroll a UIScrollView
+- `GET /interact/swipe?address=0x...&direction=left` - Trigger swipe gesture
+- `GET /interact/accessibility?address=0x...` - Perform accessibility actions
+- `GET /interact/select-cell?address=0x...&row=N` - Select table/collection view cell
+
+#### `/logs/*` - Log Ingestion & Retrieval
+Apps can pipe their logs to App-Xplorer for remote viewing.
+
+- `GET /logs/` - Fetch logs (JSONL format by default)
+  - Query params: `start`, `end` (ISO8601), `type`, `match` (SQL LIKE pattern), `limit`, `offset`, `sort` (newest/oldest), `format` (jsonl/json)
+- `GET /logs/info` - Session info (sessionId, databasePath, count)
+- `GET /logs/clear` - Clear all logs
+
+**Swift API for logging:**
+```swift
+// Log messages from your app
+AppXplorerServer.log.log("User logged in", type: "auth")
+AppXplorerServer.log.log("API request failed", type: "network")
+```
+
+Logs are stored in SQLite at `/Library/Xplorer/sessions/<session-id>/logs.db`
+
+### Output Formats
+
+- **JSON** (default) - Standard JSON responses
+- **XML** - HTML-like DOM tree for `/hierarchy/views?format=xml`
+- **JSONL** - One JSON object per line for `/logs/` endpoint
 
 ## Adding New Features
 
