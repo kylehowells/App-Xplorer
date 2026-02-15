@@ -23,8 +23,7 @@ let package = Package(
 		// Swifter - lightweight HTTP server that works on iOS
 		.package(url: "https://github.com/httpswift/swifter.git", .upToNextMajor(from: "1.5.0")),
 		// Iroh P2P networking (only resolved if AppXplorerIroh is used)
-		// TODO: Switch to remote URL once iroh-ffi has a proper release with updated xcframework
-		.package(name: "IrohLib", path: "../iroh-ffi/IrohLib"),
+		.package(url: "https://github.com/kylehowells/iroh-ffi", from: "0.96.0"),
 	],
 	targets: [
 		// Core server with HTTP transport
@@ -39,7 +38,7 @@ let package = Package(
 			name: "AppXplorerIroh",
 			dependencies: [
 				"AppXplorerServer",
-				.product(name: "IrohLib", package: "IrohLib"),
+				.product(name: "IrohLib", package: "iroh-ffi"),
 			],
 			path: "iroh-transport/Sources/AppXplorerIroh"),
 		// Tests

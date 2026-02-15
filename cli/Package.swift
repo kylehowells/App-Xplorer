@@ -14,9 +14,8 @@ let package = Package(
         .library(name: "XplorerLib", targets: ["XplorerLib"]),
     ],
     dependencies: enableIroh ? [
-        // Iroh P2P networking - using local path for development
-        // TODO: Switch to remote URL once iroh-ffi has a proper release with xcframework
-        .package(name: "IrohLib", path: "../../iroh-ffi/IrohLib"),
+        // Iroh P2P networking
+        .package(url: "https://github.com/kylehowells/iroh-ffi", from: "0.96.0"),
     ] : [],
     targets: [
         .target(
@@ -27,7 +26,7 @@ let package = Package(
             name: "xplorer",
             dependencies: enableIroh ? [
                 "XplorerLib",
-                .product(name: "IrohLib", package: "IrohLib"),
+                .product(name: "IrohLib", package: "iroh-ffi"),
             ] : ["XplorerLib"],
             path: "Sources/xplorer",
             swiftSettings: enableIroh ? [
