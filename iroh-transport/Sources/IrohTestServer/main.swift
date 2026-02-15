@@ -22,34 +22,34 @@ print("Starting server with Iroh transport...")
 fflush(stdout)
 
 do {
-    try server.start()
+	try server.start()
 
-    print("")
-    print("========================================")
-    print("Server is running!")
-    print("========================================")
-    print("")
-    print("Iroh Node ID:")
-    print(irohTransport.nodeId ?? "unknown")
-    print("")
-    if let relay = irohTransport.relayUrl {
-        print("Relay URL: \(relay)")
-        print("")
-    }
-    print("========================================")
-    print("")
-    print("Test with CLI:")
-    print("  xplorer iroh:\(irohTransport.nodeId ?? "<node_id>") info")
-    print("  xplorer iroh:\(irohTransport.nodeId ?? "<node_id>") test")
-    print("")
-    print("Press Ctrl+C to stop")
-    print("")
-    fflush(stdout)
-
-} catch {
-    print("Failed to start server: \(error)")
-    fflush(stdout)
-    exit(1)
+	print("")
+	print("========================================")
+	print("Server is running!")
+	print("========================================")
+	print("")
+	print("Iroh Node ID:")
+	print(irohTransport.nodeId ?? "unknown")
+	print("")
+	if let relay = irohTransport.relayUrl {
+		print("Relay URL: \(relay)")
+		print("")
+	}
+	print("========================================")
+	print("")
+	print("Test with CLI:")
+	print("  xplorer iroh:\(irohTransport.nodeId ?? "<node_id>") info")
+	print("  xplorer iroh:\(irohTransport.nodeId ?? "<node_id>") test")
+	print("")
+	print("Press Ctrl+C to stop")
+	print("")
+	fflush(stdout)
+}
+catch {
+	print("Failed to start server: \(error)")
+	fflush(stdout)
+	exit(1)
 }
 
 // Keep the process running
