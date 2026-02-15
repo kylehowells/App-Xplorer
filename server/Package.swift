@@ -26,6 +26,10 @@ let package = Package(
 			dependencies: [
 				.product(name: "Swifter", package: "swifter"),
 			]),
+		// Test server executable (macOS only)
+		.executableTarget(
+			name: "TestServer",
+			dependencies: ["AppXplorerServer"]),
 		.testTarget(
 			name: "AppXplorerServerTests",
 			dependencies: ["AppXplorerServer"]

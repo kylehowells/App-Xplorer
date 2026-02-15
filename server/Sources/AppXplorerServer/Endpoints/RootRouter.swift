@@ -33,6 +33,9 @@ public enum RootRouter {
 
 		let logsRouter: RequestHandler = LogEndpoints.createRouter()
 		handler.mount("/logs", router: logsRouter)
+
+		let fpsRouter: RequestHandler = FPSEndpoints.createRouter()
+		handler.mount("/fps", router: fpsRouter)
 	}
 
 	// MARK: - Index
