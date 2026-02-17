@@ -610,6 +610,14 @@ public enum HierarchyEndpoints {
 				info["tag"] = view.tag
 				info["isUserInteractionEnabled"] = view.isUserInteractionEnabled
 
+				// Always include accessibility identifiers (matches XML behavior)
+				if let aid = view.accessibilityIdentifier, !aid.isEmpty {
+					info["accessibilityIdentifier"] = aid
+				}
+				if let alabel = view.accessibilityLabel, !alabel.isEmpty {
+					info["accessibilityLabel"] = alabel
+				}
+
 				if properties == "full" {
 					info["bounds"] = self.frameToDict(view.bounds)
 					info["backgroundColor"] = self.colorToString(view.backgroundColor)
@@ -618,8 +626,6 @@ public enum HierarchyEndpoints {
 					info["contentMode"] = self.contentModeString(view.contentMode)
 					info["tintColor"] = self.colorToString(view.tintColor)
 					info["isFirstResponder"] = view.isFirstResponder
-					info["accessibilityIdentifier"] = view.accessibilityIdentifier
-					info["accessibilityLabel"] = view.accessibilityLabel
 
 					if let label = view as? UILabel {
 						info["text"] = label.text

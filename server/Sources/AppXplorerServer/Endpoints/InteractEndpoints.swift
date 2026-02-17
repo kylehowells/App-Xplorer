@@ -24,6 +24,7 @@ public enum InteractEndpoints {
 		self.registerSwipe(with: router)
 		self.registerAccessibility(with: router)
 		self.registerSelectCell(with: router)
+		self.registerMenu(with: router)
 
 		return router
 	}
@@ -983,6 +984,352 @@ public enum InteractEndpoints {
 			#endif
 		}
 	}
+
+	// MARK: - Menu
+
+	private static func registerMenu(with handler: RequestHandler) {
+		handler.register(
+			"/menu",
+			description: "Trigger a UIMenu on a UIButton or other control. Can show the menu, list menu items, or select a specific menu item by index or title.",
+			parameters: [
+				ParameterInfo(
+					name: "address",
+					description: "Memory address of the view with a menu (typically UIButton)",
+					required: true,
+					examples: ["0x12345678"]
+				),
+				ParameterInfo(
+					name: "action",
+					description: "Action to perform: 'show' presents the menu, 'list' returns menu structure, 'select' triggers a menu item",
+					required: false,
+					defaultValue: "list",
+					examples: ["show", "list", "select"]
+				),
+				ParameterInfo(
+					name: "index",
+					description: "Index of menu item to select (0-based, for action=select). Supports nested paths like '0.2' for submenu item.",
+					required: false,
+					examples: ["0", "2", "1.0"]
+				),
+				ParameterInfo(
+					name: "title",
+					description: "Title of menu item to select (for action=select). Searches recursively through submenus.",
+					required: false,
+					examples: ["Copy", "Delete", "Share"]
+				),
+			]
+		) { request in
+			#if canImport(UIKit)
+				guard let addressString = request.queryParams["address"] else {
+					return .error("Missing required parameter: address", status: .badRequest)
+				}
+
+				guard let address = SafeAddressLookup.parseAddress(addressString) else {
+					return .error("Invalid address format: \(addressString)", status: .badRequest)
+				}
+
+				guard let view = SafeAddressLookup.view(at: address) else {
+					return .error("No valid UIView found at address \(addressString)", status: .notFound)
+				}
+
+				let action = request.queryParams["action"] ?? "list"
+
+				var result: [String: Any] = [
+					"address": addressString,
+					"class": String(describing: type(of: view)),
+				]
+
+				// Get the menu from the view
+				var menu: UIMenu?
+
+				if let button = view as? UIButton {
+					menu = button.menu
+					result["showsMenuAsPrimaryAction"] = button.showsMenuAsPrimaryAction
+				}
+				else if let barButtonItem = (view as? UIView)?.value(forKey: "_barButtonItem") as? UIBarButtonItem {
+					menu = barButtonItem.menu
+				}
+
+				// Also check for context menu interaction
+				var contextMenuInteraction: UIContextMenuInteraction?
+				if let interactions = view.interactions as? [UIInteraction] {
+					contextMenuInteraction = interactions.compactMap { $0 as? UIContextMenuInteraction }.first
+				}
+
+				result["hasContextMenuInteraction"] = contextMenuInteraction != nil
+
+				guard let foundMenu = menu else {
+					if contextMenuInteraction != nil {
+						result["note"] = "View has UIContextMenuInteraction but no static UIMenu. Use action=show to trigger context menu."
+						result["hasMenu"] = false
+
+						if action == "show" {
+							// Attempt to show context menu by simulating long press
+							if let contextInteraction = contextMenuInteraction {
+								// Try to present the menu programmatically
+								// This uses private API but is useful for testing
+								let selector = NSSelectorFromString("_presentMenuAtLocation:")
+								if contextInteraction.responds(to: selector) {
+									let center = CGPoint(x: view.bounds.midX, y: view.bounds.midY)
+									contextInteraction.perform(selector, with: NSValue(cgPoint: center))
+									result["action"] = "show"
+									result["success"] = true
+									result["method"] = "contextMenuInteraction._presentMenuAtLocation"
+									return .json(result)
+								}
+							}
+
+							// Fall back to synthesizing a long press
+							if let longPressGesture = view.gestureRecognizers?.first(where: { $0 is UILongPressGestureRecognizer }) as? UILongPressGestureRecognizer {
+								if let targets = longPressGesture.value(forKey: "_targets") as? [AnyObject] {
+									for target in targets {
+										if let actionSel = target.value(forKey: "_action") as? Selector,
+										   let targetObj = target.value(forKey: "_target") as? NSObject
+										{
+											targetObj.perform(actionSel, with: longPressGesture)
+											result["action"] = "show"
+											result["success"] = true
+											result["method"] = "longPressGestureRecognizer"
+											return .json(result)
+										}
+									}
+								}
+							}
+
+							result["success"] = false
+							result["error"] = "Could not programmatically trigger context menu"
+							return .json(result)
+						}
+
+						return .json(result)
+					}
+
+					return .error("No UIMenu found on this view. Button.menu is nil and no UIContextMenuInteraction present.", status: .badRequest)
+				}
+
+				result["hasMenu"] = true
+				result["menuTitle"] = foundMenu.title
+				result["menuIdentifier"] = foundMenu.identifier.rawValue
+
+				switch action {
+					case "list":
+						result["menu"] = self.serializeMenu(foundMenu)
+						result["success"] = true
+
+					case "show":
+						// For UIButton with menu, we can trigger the menu presentation
+						if let button = view as? UIButton {
+							// If showsMenuAsPrimaryAction is true, sendActions will show menu
+							if button.showsMenuAsPrimaryAction {
+								button.sendActions(for: .menuActionTriggered)
+								result["success"] = true
+								result["method"] = "sendActions(for: .menuActionTriggered)"
+							}
+							else {
+								// Need to simulate a long press or use context menu presentation
+								// Try the context menu interaction if available
+								if let contextInteraction = contextMenuInteraction {
+									let selector = NSSelectorFromString("_presentMenuAtLocation:")
+									if contextInteraction.responds(to: selector) {
+										let center = CGPoint(x: view.bounds.midX, y: view.bounds.midY)
+										contextInteraction.perform(selector, with: NSValue(cgPoint: center))
+										result["success"] = true
+										result["method"] = "contextMenuInteraction._presentMenuAtLocation"
+									}
+									else {
+										result["success"] = false
+										result["error"] = "Button has menu but showsMenuAsPrimaryAction is false. Long-press required."
+										result["suggestion"] = "Set showsMenuAsPrimaryAction=true or use a long press gesture"
+									}
+								}
+								else {
+									result["success"] = false
+									result["error"] = "Button has menu but showsMenuAsPrimaryAction is false. Long-press required."
+								}
+							}
+						}
+						else {
+							result["success"] = false
+							result["error"] = "Cannot programmatically show menu on non-button views"
+						}
+
+					case "select":
+						// Find and execute a menu item
+						var targetAction: UIAction?
+						var actionPath: String = ""
+
+						if let indexPath = request.queryParams["index"] {
+							// Parse index path (e.g., "0", "1.2", "0.1.3")
+							let indices = indexPath.split(separator: ".").compactMap { Int($0) }
+							if indices.isEmpty {
+								return .error("Invalid index format: \(indexPath)", status: .badRequest)
+							}
+
+							targetAction = self.findMenuAction(in: foundMenu, at: indices)
+							actionPath = indexPath
+						}
+						else if let title = request.queryParams["title"] {
+							targetAction = self.findMenuAction(in: foundMenu, titled: title)
+							actionPath = title
+						}
+						else {
+							return .error("action=select requires either 'index' or 'title' parameter", status: .badRequest)
+						}
+
+						if let action = targetAction {
+							result["selectedAction"] = [
+								"title": action.title,
+								"identifier": action.identifier.rawValue,
+								"state": self.menuElementStateString(action.state),
+								"attributes": self.menuElementAttributesString(action.attributes),
+							]
+
+							// Execute the action's handler
+							// UIAction stores its handler internally - we need to trigger it
+							// The handler is called when the action is performed
+							if #available(iOS 16.0, *) {
+								action.performWithSender(nil, target: nil)
+								result["success"] = true
+								result["method"] = "performWithSender"
+							}
+							else {
+								// Fallback for iOS 15: try to invoke via private API
+								let selector = NSSelectorFromString("_performActionWithSender:")
+								if action.responds(to: selector) {
+									action.perform(selector, with: nil)
+									result["success"] = true
+									result["method"] = "_performActionWithSender (fallback)"
+								}
+								else {
+									result["success"] = false
+									result["error"] = "Cannot execute menu action on iOS < 16. Use action=show to present the menu instead."
+								}
+							}
+							result["actionPath"] = actionPath
+						}
+						else {
+							result["success"] = false
+							result["error"] = "Menu item not found: \(actionPath)"
+							result["menu"] = self.serializeMenu(foundMenu)
+						}
+
+					default:
+						return .error("Unknown action: \(action). Use 'list', 'show', or 'select'.", status: .badRequest)
+				}
+
+				return .json(result)
+			#else
+				return .error("UI interaction is only available on iOS/tvOS", status: .badRequest)
+			#endif
+		}
+	}
+
+	#if canImport(UIKit)
+		// MARK: - Menu Helpers
+
+		private static func serializeMenu(_ menu: UIMenu) -> [String: Any] {
+			var result: [String: Any] = [
+				"title": menu.title,
+				"identifier": menu.identifier.rawValue,
+				"options": self.menuOptionsString(menu.options),
+			]
+
+			var children: [[String: Any]] = []
+			for (index, element) in menu.children.enumerated() {
+				var childInfo: [String: Any] = ["index": index]
+
+				if let action = element as? UIAction {
+					childInfo["type"] = "action"
+					childInfo["title"] = action.title
+					childInfo["identifier"] = action.identifier.rawValue
+					childInfo["state"] = self.menuElementStateString(action.state)
+					childInfo["attributes"] = self.menuElementAttributesString(action.attributes)
+					if let image = action.image {
+						childInfo["hasImage"] = true
+						childInfo["imageSystemName"] = image.accessibilityIdentifier ?? "(custom)"
+					}
+				}
+				else if let submenu = element as? UIMenu {
+					childInfo["type"] = "submenu"
+					childInfo["title"] = submenu.title
+					childInfo["identifier"] = submenu.identifier.rawValue
+					childInfo["children"] = self.serializeMenu(submenu)["children"] ?? []
+					childInfo["childCount"] = submenu.children.count
+				}
+				else {
+					childInfo["type"] = "unknown"
+					childInfo["class"] = String(describing: type(of: element))
+				}
+
+				children.append(childInfo)
+			}
+
+			result["children"] = children
+			result["childCount"] = children.count
+
+			return result
+		}
+
+		private static func findMenuAction(in menu: UIMenu, at indices: [Int]) -> UIAction? {
+			guard !indices.isEmpty else { return nil }
+
+			let index = indices[0]
+			guard index >= 0, index < menu.children.count else { return nil }
+
+			let element = menu.children[index]
+
+			if indices.count == 1 {
+				return element as? UIAction
+			}
+			else if let submenu = element as? UIMenu {
+				return self.findMenuAction(in: submenu, at: Array(indices.dropFirst()))
+			}
+
+			return nil
+		}
+
+		private static func findMenuAction(in menu: UIMenu, titled title: String) -> UIAction? {
+			for element in menu.children {
+				if let action = element as? UIAction, action.title == title {
+					return action
+				}
+				else if let submenu = element as? UIMenu {
+					if let found = self.findMenuAction(in: submenu, titled: title) {
+						return found
+					}
+				}
+			}
+			return nil
+		}
+
+		private static func menuOptionsString(_ options: UIMenu.Options) -> [String] {
+			var result: [String] = []
+			if options.contains(.displayInline) { result.append("displayInline") }
+			if options.contains(.destructive) { result.append("destructive") }
+			if options.contains(.singleSelection) { result.append("singleSelection") }
+			return result
+		}
+
+		private static func menuElementStateString(_ state: UIMenuElement.State) -> String {
+			switch state {
+				case .off: return "off"
+				case .on: return "on"
+				case .mixed: return "mixed"
+				@unknown default: return "unknown"
+			}
+		}
+
+		private static func menuElementAttributesString(_ attributes: UIMenuElement.Attributes) -> [String] {
+			var result: [String] = []
+			if attributes.contains(.disabled) { result.append("disabled") }
+			if attributes.contains(.destructive) { result.append("destructive") }
+			if attributes.contains(.hidden) { result.append("hidden") }
+			if #available(iOS 16.0, *) {
+				if attributes.contains(.keepsMenuPresented) { result.append("keepsMenuPresented") }
+			}
+			return result
+		}
+	#endif
 
 	// MARK: - Helper Methods
 

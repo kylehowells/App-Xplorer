@@ -9,8 +9,8 @@ options:
 packages:
   AppXplorerServer:
     path: ../server
-  AppXplorerIroh:
-    path: ../iroh-transport
+  # AppXplorerIroh:
+  #   path: ../iroh-transport
 
 targets:
   AppXplorerDemo:
@@ -20,7 +20,7 @@ targets:
       - AppXplorerDemo
     dependencies:
       - package: AppXplorerServer
-      - package: AppXplorerIroh
+      # - package: AppXplorerIroh
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.appxplorer.demo

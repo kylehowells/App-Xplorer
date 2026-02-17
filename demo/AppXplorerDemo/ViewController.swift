@@ -1,12 +1,16 @@
 import UIKit
 import AppXplorerServer
-import AppXplorerIroh
+#if canImport(AppXplorerIroh)
+	import AppXplorerIroh
+#endif
 
 // MARK: - Main Tab Bar Controller
 
 class MainTabBarController: UITabBarController {
 	private var server: AppXplorerServer?
-	private var irohTransport: IrohTransportAdapter?
+	#if canImport(AppXplorerIroh)
+		private var irohTransport: IrohTransportAdapter?
+	#endif
 
 	override func viewDidLoad() {
 		super.viewDidLoad()
@@ -66,34 +70,46 @@ class MainTabBarController: UITabBarController {
 
 		for port in ports {
 			do {
-				// Create server with HTTP and Iroh transports
+				// Create server with HTTP transport (and optionally Iroh)
 				let server = AppXplorerServer()
 
 				// Add HTTP transport
 				let httpTransport = HTTPTransportAdapter(port: port)
 				server.addTransport(httpTransport)
 
-				// Create Iroh transport and add it to the server
-				let tempDir = FileManager.default.temporaryDirectory.appendingPathComponent("appxplorer-iroh-\(ProcessInfo.processInfo.processIdentifier)")
-				let irohTransport = IrohTransportAdapter(storagePath: tempDir.path)
-				server.addTransport(irohTransport)
+				#if canImport(AppXplorerIroh)
+					// Create Iroh transport and add it to the server
+					let tempDir = FileManager.default.temporaryDirectory.appendingPathComponent("appxplorer-iroh-\(ProcessInfo.processInfo.processIdentifier)")
+					let irohTransport = IrohTransportAdapter(storagePath: tempDir.path)
+					server.addTransport(irohTransport)
+					self.irohTransport = irohTransport
+				#endif
 
 				self.server = server
-				self.irohTransport = irohTransport
 
 				try server.start()
 
-				let nodeId = irohTransport.nodeId ?? "unknown"
-				print("Server started on port \(port)")
-				print("Iroh Node ID: \(nodeId)")
+				#if canImport(AppXplorerIroh)
+					let nodeId = self.irohTransport?.nodeId ?? "unknown"
+					print("Server started on port \(port)")
+					print("Iroh Node ID: \(nodeId)")
 
-				AppXplorerServer.log("Server started on port \(port)", type: "server")
-				AppXplorerServer.log("Iroh Node ID: \(nodeId)", type: "server")
+					AppXplorerServer.log("Server started on port \(port)", type: "server")
+					AppXplorerServer.log("Iroh Node ID: \(nodeId)", type: "server")
 
-				// Update UI on main thread
-				await MainActor.run {
-					self.updateHomeViewWithIrohInfo(port: port, nodeId: nodeId)
-				}
+					// Update UI on main thread
+					await MainActor.run {
+						self.updateHomeViewWithIrohInfo(port: port, nodeId: nodeId)
+					}
+				#else
+					print("Server started on port \(port)")
+					AppXplorerServer.log("Server started on port \(port)", type: "server")
+
+					// Update UI on main thread
+					await MainActor.run {
+						self.updateHomeViewWithHttpInfo(port: port)
+					}
+				#endif
 				return
 			}
 			catch {
@@ -104,6 +120,13 @@ class MainTabBarController: UITabBarController {
 
 		print("Failed to start server on any port")
 		AppXplorerServer.log("Failed to start server on any port", type: "error")
+	}
+
+	private func updateHomeViewWithHttpInfo(port: UInt16) {
+		// Find the HomeViewController and update its labels
+		if let homeVC = self.viewControllers?.first as? HomeViewController {
+			homeVC.updateServerInfo(port: port, nodeId: nil)
+		}
 	}
 
 	private func updateHomeViewWithIrohInfo(port: UInt16, nodeId: String) {
@@ -178,14 +201,20 @@ class HomeViewController: UIViewController {
 		self.view.addSubview(self.instructionsLabel)
 	}
 
-	func updateServerInfo(port: UInt16, nodeId: String) {
+	func updateServerInfo(port: UInt16, nodeId: String?) {
 		self.statusLabel.text = "HTTP: Running on port \(port)"
 		self.statusLabel.textColor = .systemGreen
 
-		// Truncate node ID for display (first 16 chars)
-		let shortNodeId = String(nodeId.prefix(16)) + "..."
-		self.irohLabel.text = "Iroh: \(shortNodeId)\n(Full ID in console)"
-		self.irohLabel.textColor = .systemGreen
+		if let nodeId = nodeId {
+			// Truncate node ID for display (first 16 chars)
+			let shortNodeId = String(nodeId.prefix(16)) + "..."
+			self.irohLabel.text = "Iroh: \(shortNodeId)\n(Full ID in console)"
+			self.irohLabel.textColor = .systemGreen
+		}
+		else {
+			self.irohLabel.text = "Iroh: Not available"
+			self.irohLabel.textColor = .secondaryLabel
+		}
 
 		self.view.setNeedsLayout()
 	}
@@ -263,6 +292,18 @@ class ControlsViewController: UIViewController {
 		self.tapCountLabel.frame = CGRect(x: padding + 160, y: yOffset, width: 100, height: 44)
 		self.contentView.addSubview(self.tapCountLabel)
 		yOffset += 60
+
+		// Menu Button (for testing UIMenu interaction)
+		let menuButton = UIButton(type: .system)
+		menuButton.setTitle("Actions ▾", for: .normal)
+		menuButton.backgroundColor = .systemGreen
+		menuButton.setTitleColor(.white, for: .normal)
+		menuButton.layer.cornerRadius = 8
+		menuButton.frame = CGRect(x: padding + 160, y: yOffset - 60, width: 120, height: 44)
+		menuButton.accessibilityIdentifier = "menuButton"
+		menuButton.showsMenuAsPrimaryAction = true
+		menuButton.menu = self.createActionsMenu()
+		self.contentView.addSubview(menuButton)
 
 		// Destructive Button
 		let destructiveButton = UIButton(type: .system)
@@ -378,6 +419,39 @@ class ControlsViewController: UIViewController {
 		self.tapCount += 1
 		self.tapCountLabel.text = "Taps: \(self.tapCount)"
 		AppXplorerServer.log("Primary button tapped (count: \(self.tapCount))", type: "ui")
+	}
+
+	private func createActionsMenu() -> UIMenu {
+		let copyAction = UIAction(title: "Copy", image: UIImage(systemName: "doc.on.doc")) { _ in
+			AppXplorerServer.log("Menu action: Copy", type: "ui")
+		}
+
+		let pasteAction = UIAction(title: "Paste", image: UIImage(systemName: "doc.on.clipboard")) { _ in
+			AppXplorerServer.log("Menu action: Paste", type: "ui")
+		}
+
+		let shareAction = UIAction(title: "Share", image: UIImage(systemName: "square.and.arrow.up")) { _ in
+			AppXplorerServer.log("Menu action: Share", type: "ui")
+		}
+
+		let deleteAction = UIAction(title: "Delete", image: UIImage(systemName: "trash"), attributes: .destructive) { _ in
+			AppXplorerServer.log("Menu action: Delete", type: "ui")
+		}
+
+		// Create a submenu
+		let moreMenu = UIMenu(title: "More Options", image: UIImage(systemName: "ellipsis.circle"), children: [
+			UIAction(title: "Duplicate", image: UIImage(systemName: "plus.square.on.square")) { _ in
+				AppXplorerServer.log("Menu action: Duplicate", type: "ui")
+			},
+			UIAction(title: "Move", image: UIImage(systemName: "folder")) { _ in
+				AppXplorerServer.log("Menu action: Move", type: "ui")
+			},
+			UIAction(title: "Rename", image: UIImage(systemName: "pencil")) { _ in
+				AppXplorerServer.log("Menu action: Rename", type: "ui")
+			},
+		])
+
+		return UIMenu(title: "", children: [copyAction, pasteAction, shareAction, moreMenu, deleteAction])
 	}
 
 	@objc private func showAlert() {
