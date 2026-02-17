@@ -147,10 +147,6 @@ import Testing
 
 // MARK: - Safe Invalid Address Tests
 
-// Note: We only test addresses that are guaranteed safe to check
-// (null, unaligned) because checking arbitrary addresses like
-// 0xDEADBEEF could crash even with validation due to memory access
-
 @Test func testLookupNullAddress() async throws {
 	let retrieved = SafeAddressLookup.object(at: 0)
 	#expect(retrieved == nil)
@@ -162,6 +158,49 @@ import Testing
 	#expect(SafeAddressLookup.object(at: 0x3) == nil)
 	#expect(SafeAddressLookup.object(at: 0x5) == nil)
 	#expect(SafeAddressLookup.object(at: 0x7) == nil)
+}
+
+// MARK: - Signal-Safe Invalid Address Tests
+
+// These tests verify that stale/invalid aligned addresses return nil
+// instead of crashing. Previously these would EXC_BAD_ACCESS.
+
+@Test func testLookupBogusAlignedAddresses() async throws {
+	// Classic debug fill patterns — aligned but pointing to unmapped memory
+	#expect(SafeAddressLookup.object(at: 0xDEADBEE0) == nil)
+	#expect(SafeAddressLookup.object(at: 0xCAFEBAB0) == nil)
+	#expect(SafeAddressLookup.object(at: 0xBAADF000) == nil)
+	#expect(SafeAddressLookup.object(at: 0xFEEDFAC0) == nil)
+}
+
+@Test func testLookupHighAlignedAddresses() async throws {
+	// High address space values that are aligned but unmapped
+	#expect(SafeAddressLookup.object(at: 0x0000_0001_0000_0000) == nil)
+	#expect(SafeAddressLookup.object(at: 0x7FFF_FFFF_FFFF_FFF8) == nil)
+	#expect(SafeAddressLookup.object(at: 0x0000_DEAD_BEEF_0000) == nil)
+}
+
+@Test func testLookupStaleAddressAfterDeallocation() async throws {
+	// Create an object, grab its address, then let it deallocate.
+	// The lookup should return nil (or at worst a different object),
+	// but must NOT crash.
+	var address: UInt = 0
+	autoreleasepool {
+		let temporary = NSMutableString(string: "I will be deallocated")
+		address = SafeAddressLookup.address(of: temporary)
+		// `temporary` is deallocated at the end of this scope
+	}
+
+	// Force some allocations to increase the chance the memory is reused/unmapped
+	for _ in 0 ..< 100 {
+		_ = NSObject()
+	}
+
+	// This must not crash — it should return nil or a different object
+	let result = SafeAddressLookup.object(at: address)
+	// We don't assert nil because the memory could be reused by another valid object.
+	// The key assertion is that we reach this line without crashing.
+	_ = result
 }
 
 // MARK: - Subclass Type Checking Tests

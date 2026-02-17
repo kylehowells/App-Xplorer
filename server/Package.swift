@@ -20,11 +20,14 @@ let package = Package(
 		.package(url: "https://github.com/httpswift/swifter.git", .upToNextMajor(from: "1.5.0")),
 	],
 	targets: [
+		// C helper for signal-safe memory reads (sigsetjmp is unavailable in Swift)
+		.target(name: "CSafeMemory"),
 		// Core target - HTTP transport
 		.target(
 			name: "AppXplorerServer",
 			dependencies: [
 				.product(name: "Swifter", package: "swifter"),
+				"CSafeMemory",
 			]),
 		// Test server executable (macOS only)
 		.executableTarget(

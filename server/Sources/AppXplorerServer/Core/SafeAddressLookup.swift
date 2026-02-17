@@ -1,3 +1,4 @@
+import CSafeMemory
 import Foundation
 import ObjectiveC
 
@@ -29,9 +30,10 @@ import ObjectiveC
 /// ## Safety
 /// This utility performs several validation steps:
 /// 1. Checks pointer alignment (must be 8-byte aligned on 64-bit)
-/// 2. Reads the isa pointer from the potential object
+/// 2. Safely reads the isa pointer (catches SIGSEGV/SIGBUS on bad memory)
 /// 3. Validates the isa points to a registered ObjC class
-/// 4. Optionally validates the class hierarchy matches the expected type
+/// 4. Validates the class hierarchy matches the expected type
+/// 5. Wraps object access in signal-safe guards
 ///
 /// **Note**: While this is much safer than blind pointer casting, it cannot guarantee
 /// 100% safety. If memory has been reused by a different valid ObjC object, this will
@@ -66,10 +68,12 @@ public enum SafeAddressLookup {
 		// Step 3: Create pointer
 		guard let pointer = UnsafeRawPointer(bitPattern: address) else { return nil }
 
-		// Step 4: Validate using ObjC runtime
+		// Step 4: Validate using ObjC runtime with signal-safe memory reads
 		guard self.isValidObjCObject(at: pointer) else { return nil }
 
-		// Step 5: Get the object's class and validate type hierarchy
+		// Step 5: Get the object and validate type
+		// The isa check above already confirmed this is a valid ObjC object,
+		// so takeUnretainedValue is safe here
 		let unmanaged = Unmanaged<AnyObject>.fromOpaque(pointer)
 		let object = unmanaged.takeUnretainedValue()
 
@@ -122,19 +126,23 @@ public enum SafeAddressLookup {
 
 	/// Validates that a pointer points to a valid Objective-C object.
 	///
+	/// Uses signal-safe memory reads to avoid crashing on stale/invalid pointers.
 	/// This performs the following checks:
-	/// 1. Reads the isa pointer (first 8 bytes of an ObjC object)
+	/// 1. Safely reads the isa pointer (first 8 bytes of an ObjC object)
 	/// 2. Masks off tagged pointer bits to get the actual class pointer
-	/// 3. Verifies the class is registered with the ObjC runtime
+	/// 3. Safely reads from the class pointer to verify it's accessible
+	/// 4. Verifies the class is registered with the ObjC runtime
 	private static func isValidObjCObject(at pointer: UnsafeRawPointer) -> Bool {
-		// Read the potential isa pointer (first word of an ObjC object)
-		// On 64-bit systems, the isa may be a tagged pointer or non-pointer isa
-		let isaValue = pointer.load(as: UInt.self)
+		// Safely read the potential isa pointer (first word of an ObjC object).
+		// This is the critical point where stale addresses crash — safe_memory_read
+		// uses sigsetjmp/siglongjmp to catch SIGSEGV/SIGBUS.
+		var isaValue: UInt = 0
+		guard safe_memory_read(pointer, &isaValue, MemoryLayout<UInt>.size) else {
+			return false
+		}
 
 		// Handle non-pointer isa (used by modern ObjC runtime for optimization)
 		// The actual class pointer is obtained by masking with ISA_MASK
-		// ISA_MASK for arm64: 0x0000000ffffffff8
-		// ISA_MASK for x86_64: 0x00007ffffffffff8
 		#if arch(arm64)
 			let isaMask: UInt = 0x0000000FFFFFFFF8
 		#else
@@ -147,9 +155,15 @@ public enum SafeAddressLookup {
 		guard classPointer != 0 else { return false }
 
 		// Convert to AnyClass and validate
-		guard let pointer = UnsafeRawPointer(bitPattern: classPointer) else { return false }
+		guard let classRawPointer = UnsafeRawPointer(bitPattern: classPointer) else { return false }
 
-		let potentialClass: AnyClass? = unsafeBitCast(pointer, to: AnyClass?.self)
+		// Safely probe the class pointer too — it could also be stale
+		var probe: UInt = 0
+		guard safe_memory_read(classRawPointer, &probe, MemoryLayout<UInt>.size) else {
+			return false
+		}
+
+		let potentialClass: AnyClass? = unsafeBitCast(classRawPointer, to: AnyClass?.self)
 
 		guard let cls = potentialClass else { return false }
 
