@@ -14,9 +14,9 @@ public enum FPSEndpoints {
 		let router = RequestHandler(description: "FPS monitoring and frame timing data")
 
 		// Index endpoint
-		router.register("/", description: "List FPS endpoints", runsOnMainThread: false) { _ in
+		router.register("/", description: "List FPS endpoints", runsOnMainThread: false, handler: { _ in
 			return .json(router.routerInfo(deep: true))
-		}
+		})
 
 		// Register all endpoints
 		self.registerEnableEndpoint(with: router)
@@ -36,7 +36,7 @@ public enum FPSEndpoints {
 			"/enable",
 			description: "Enable FPS monitoring via CADisplayLink",
 			runsOnMainThread: false
-		) { _ in
+		, handler: { _ in
 			FPSMonitor.shared.enable()
 
 			return .json([
@@ -44,7 +44,7 @@ public enum FPSEndpoints {
 				"message": "FPS monitoring enabled",
 				"note": "Frame data will be collected. Use /fps/status to check current state.",
 			])
-		}
+		})
 	}
 
 	// MARK: - Disable
@@ -54,7 +54,7 @@ public enum FPSEndpoints {
 			"/disable",
 			description: "Disable FPS monitoring",
 			runsOnMainThread: false
-		) { _ in
+		, handler: { _ in
 			FPSMonitor.shared.disable()
 
 			return .json([
@@ -62,7 +62,7 @@ public enum FPSEndpoints {
 				"message": "FPS monitoring disabled",
 				"note": "Existing data is retained. Use /fps/clear to remove stored data.",
 			])
-		}
+		})
 	}
 
 	// MARK: - Status
@@ -72,10 +72,10 @@ public enum FPSEndpoints {
 			"/status",
 			description: "Get current FPS monitoring status",
 			runsOnMainThread: false
-		) { _ in
+		, handler: { _ in
 			let status = FPSMonitor.shared.getStatus()
 			return .json(status)
-		}
+		})
 	}
 
 	// MARK: - Recent (last 5 minutes, full resolution)
@@ -119,7 +119,7 @@ public enum FPSEndpoints {
 				),
 			],
 			runsOnMainThread: false
-		) { request in
+		, handler: { request in
 			let count = request.queryParams["count"].flatMap({ Int($0) })
 			let ascending = request.queryParams["order"] == "asc"
 
@@ -183,7 +183,7 @@ public enum FPSEndpoints {
 					]
 				}),
 			])
-		}
+		})
 	}
 
 	// MARK: - History (older than 5 minutes, 1-second buckets)
@@ -220,7 +220,7 @@ public enum FPSEndpoints {
 				),
 			],
 			runsOnMainThread: false
-		) { request in
+		, handler: { request in
 			let count = request.queryParams["count"].flatMap({ Int($0) })
 			let start = request.queryParams["start"].flatMap({ Double($0) })
 			let end = request.queryParams["end"].flatMap({ Double($0) })
@@ -290,7 +290,7 @@ public enum FPSEndpoints {
 					]
 				}),
 			])
-		}
+		})
 	}
 
 	// MARK: - Clear
@@ -300,14 +300,14 @@ public enum FPSEndpoints {
 			"/clear",
 			description: "Clear all stored FPS data (does not disable monitoring)",
 			runsOnMainThread: false
-		) { _ in
+		, handler: { _ in
 			FPSMonitor.shared.clearData()
 
 			return .json([
 				"success": true,
 				"message": "All FPS data cleared",
 			])
-		}
+		})
 	}
 
 	// MARK: - Helpers

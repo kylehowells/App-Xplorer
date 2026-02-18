@@ -83,7 +83,7 @@ public enum LogEndpoints {
 				),
 			],
 			runsOnMainThread: false
-		) { request in
+		, handler: { request in
 			// Parse query options
 			var options = LogStore.QueryOptions()
 
@@ -171,7 +171,7 @@ public enum LogEndpoints {
 				let body = lines.joined(separator: "\n")
 				return .text(body)
 			}
-		}
+		})
 	}
 
 	// MARK: - Info
@@ -181,13 +181,13 @@ public enum LogEndpoints {
 			"/info",
 			description: "Get information about the current log session including session ID, database path, and log count.",
 			runsOnMainThread: false
-		) { _ in
+		, handler: { _ in
 			return .json([
 				"sessionId": LogStore.shared.sessionId,
 				"databasePath": LogStore.shared.databasePath,
 				"count": LogStore.shared.count(),
 			])
-		}
+		})
 	}
 
 	// MARK: - Clear
@@ -197,13 +197,13 @@ public enum LogEndpoints {
 			"/clear",
 			description: "Clear all logs from the current session.",
 			runsOnMainThread: false
-		) { _ in
+		, handler: { _ in
 			let countBefore = LogStore.shared.count()
 			LogStore.shared.clear()
 			return .json([
 				"success": true,
 				"cleared": countBefore,
 			])
-		}
+		})
 	}
 }

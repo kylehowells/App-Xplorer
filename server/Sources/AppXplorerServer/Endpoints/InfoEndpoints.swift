@@ -19,7 +19,7 @@ public enum InfoEndpoints {
 		handler.register(
 			"/info",
 			description: "Get app, device, screen, and locale information. Returns bundle info (name, version, build, bundleId), device info (name, model, systemVersion), screen dimensions with scale factor, and locale/language settings."
-		) { _ in
+		, handler: { _ in
 			// Build locale info (available on all platforms)
 			let locale: Locale = .current
 			let preferredLanguages: [String] = Locale.preferredLanguages
@@ -78,7 +78,7 @@ public enum InfoEndpoints {
 				]
 				return .json(info)
 			#endif
-		}
+		})
 	}
 
 	// MARK: - Screenshot
@@ -123,7 +123,7 @@ public enum InfoEndpoints {
 					examples: ["true", "false"]
 				),
 			]
-		) { request in
+		, handler: { request in
 			#if canImport(UIKit)
 				// Parse parameters
 				let viewAddress: String? = request.queryParams["view"]
@@ -175,7 +175,7 @@ public enum InfoEndpoints {
 			#else
 				return .error("Screenshot capture is only available on iOS/tvOS", status: .badRequest)
 			#endif
-		}
+		})
 	}
 
 	#if canImport(UIKit)
@@ -220,7 +220,7 @@ public enum InfoEndpoints {
 
 			let renderer: UIGraphicsImageRenderer = .init(bounds: screenBounds, format: rendererFormat)
 
-			let image: UIImage = renderer.image { context in
+			let image: UIImage = renderer.image(actions: { context in
 				// Fill with white background
 				UIColor.white.setFill()
 				context.fill(screenBounds)
@@ -231,7 +231,7 @@ public enum InfoEndpoints {
 						window.drawHierarchy(in: window.bounds, afterScreenUpdates: false)
 					}
 				}
-			}
+			})
 
 			// Convert to requested format
 			if imageFormat == "jpeg" || imageFormat == "jpg" {
@@ -268,10 +268,10 @@ public enum InfoEndpoints {
 
 			let renderer: UIGraphicsImageRenderer = .init(bounds: bounds, format: rendererFormat)
 
-			let image: UIImage = renderer.image { _ in
+			let image: UIImage = renderer.image(actions: { _ in
 				// Draw the view hierarchy
 				view.drawHierarchy(in: bounds, afterScreenUpdates: afterScreenUpdates)
-			}
+			})
 
 			// Convert to requested format
 			if imageFormat == "jpeg" || imageFormat == "jpg" {

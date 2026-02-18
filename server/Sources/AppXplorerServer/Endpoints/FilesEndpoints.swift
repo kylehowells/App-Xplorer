@@ -9,9 +9,9 @@ public enum FilesEndpoints {
 		let router: RequestHandler = .init(description: "Browse and read files from the app's sandbox")
 
 		// Register index for this sub-router (file operations don't need main thread)
-		router.register("/", description: "List all file endpoints", runsOnMainThread: false) { _ in
+		router.register("/", description: "List all file endpoints", runsOnMainThread: false, handler: { _ in
 			return .json(router.routerInfo(deep: true))
-		}
+		})
 
 		self.registerKeyDirectories(with: router)
 		self.registerList(with: router)
@@ -107,7 +107,7 @@ public enum FilesEndpoints {
 			"/key-directories",
 			description: "List all key app directories with their paths. Use these paths or aliases with other file endpoints.",
 			runsOnMainThread: false
-		) { _ in
+		, handler: { _ in
 			let fileManager: FileManager = .default
 			var directories: [[String: Any]] = []
 
@@ -202,7 +202,7 @@ public enum FilesEndpoints {
 				"directories": directories,
 				"note": "Use the 'alias' values with the path parameter in other endpoints (e.g., /files/list?path=documents)",
 			])
-		}
+		})
 	}
 
 	/// Helper to build directory info with existence check
@@ -271,7 +271,7 @@ public enum FilesEndpoints {
 				),
 			],
 			runsOnMainThread: false
-		) { request in
+		, handler: { request in
 			let pathParam: String = request.queryParams["path"] ?? "home"
 			let path: String = self.resolvePath(pathParam)
 			let sortBy: String = request.queryParams["sort"] ?? "name"
@@ -359,7 +359,7 @@ public enum FilesEndpoints {
 			catch {
 				return .error("Failed to read directory: \(error.localizedDescription)")
 			}
-		}
+		})
 	}
 
 	// MARK: - Metadata
@@ -377,7 +377,7 @@ public enum FilesEndpoints {
 				),
 			],
 			runsOnMainThread: false
-		) { request in
+		, handler: { request in
 			guard let pathParam: String = request.queryParams["path"] else {
 				return .error("Missing required parameter: path", status: .badRequest)
 			}
@@ -424,7 +424,7 @@ public enum FilesEndpoints {
 			catch {
 				return .error("Failed to read metadata: \(error.localizedDescription)")
 			}
-		}
+		})
 	}
 
 	// MARK: - Read
@@ -448,7 +448,7 @@ public enum FilesEndpoints {
 				),
 			],
 			runsOnMainThread: false
-		) { request in
+		, handler: { request in
 			guard let pathParam: String = request.queryParams["path"] else {
 				return .error("Missing required parameter: path", status: .badRequest)
 			}
@@ -518,7 +518,7 @@ public enum FilesEndpoints {
 				default:
 					return .binary(data)
 			}
-		}
+		})
 	}
 
 	// MARK: - Head
@@ -549,7 +549,7 @@ public enum FilesEndpoints {
 				),
 			],
 			runsOnMainThread: false
-		) { request in
+		, handler: { request in
 			guard let pathParam: String = request.queryParams["path"] else {
 				return .error("Missing required parameter: path", status: .badRequest)
 			}
@@ -590,7 +590,7 @@ public enum FilesEndpoints {
 				"content": headLines.joined(separator: "\n"),
 				"lines": headLines,
 			])
-		}
+		})
 	}
 
 	// MARK: - Tail
@@ -621,7 +621,7 @@ public enum FilesEndpoints {
 				),
 			],
 			runsOnMainThread: false
-		) { request in
+		, handler: { request in
 			guard let pathParam: String = request.queryParams["path"] else {
 				return .error("Missing required parameter: path", status: .badRequest)
 			}
@@ -662,6 +662,6 @@ public enum FilesEndpoints {
 				"content": tailLines.joined(separator: "\n"),
 				"lines": tailLines,
 			])
-		}
+		})
 	}
 }

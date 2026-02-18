@@ -53,12 +53,12 @@ public enum RootRouter {
 					examples: ["deep", "shallow"]
 				),
 			]
-		) { request in
+		, handler: { request in
 			// Check for depth parameter (default to deep)
 			let depth: String = request.queryParams["depth"] ?? "deep"
 			let isDeep: Bool = depth.lowercased() != "shallow"
 
 			return .json(handler.routerInfo(deep: isDeep))
-		}
+		})
 	}
 }

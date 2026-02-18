@@ -9,9 +9,9 @@ public enum UserDefaultsEndpoints {
 		let router: RequestHandler = .init(description: "Access and inspect NSUserDefaults data")
 
 		// Register index for this sub-router
-		router.register("/", description: "List all UserDefaults endpoints", runsOnMainThread: false) { _ in
+		router.register("/", description: "List all UserDefaults endpoints", runsOnMainThread: false, handler: { _ in
 			return .json(router.routerInfo(deep: true))
-		}
+		})
 
 		self.registerAll(with: router)
 		self.registerGet(with: router)
@@ -149,7 +149,7 @@ public enum UserDefaultsEndpoints {
 				),
 			],
 			runsOnMainThread: false
-		) { request in
+		, handler: { request in
 			let defaults: UserDefaults = self.getDefaults(suite: request.queryParams["suite"])
 			let filterSystem: Bool = request.queryParams["filterSystem"] == "true"
 			let sort: String = request.queryParams["sort"] ?? "asc"
@@ -188,7 +188,7 @@ public enum UserDefaultsEndpoints {
 				"filterSystem": filterSystem,
 				"items": items,
 			])
-		}
+		})
 	}
 
 	// MARK: - Get
@@ -211,7 +211,7 @@ public enum UserDefaultsEndpoints {
 				),
 			],
 			runsOnMainThread: false
-		) { request in
+		, handler: { request in
 			guard let key: String = request.queryParams["key"] else {
 				return .error("Missing required parameter: key", status: .badRequest)
 			}
@@ -234,7 +234,7 @@ public enum UserDefaultsEndpoints {
 				"type": self.typeName(for: value),
 				"suite": request.queryParams["suite"] ?? "standard",
 			])
-		}
+		})
 	}
 
 	// MARK: - Keys
@@ -275,7 +275,7 @@ public enum UserDefaultsEndpoints {
 				),
 			],
 			runsOnMainThread: false
-		) { request in
+		, handler: { request in
 			let defaults: UserDefaults = self.getDefaults(suite: request.queryParams["suite"])
 			let filterSystem: Bool = request.queryParams["filterSystem"] == "true"
 			let prefix: String? = request.queryParams["prefix"]
@@ -312,7 +312,7 @@ public enum UserDefaultsEndpoints {
 				"count": keys.count,
 				"keys": keys,
 			])
-		}
+		})
 	}
 
 	// MARK: - Search
@@ -354,7 +354,7 @@ public enum UserDefaultsEndpoints {
 				),
 			],
 			runsOnMainThread: false
-		) { request in
+		, handler: { request in
 			guard let query: String = request.queryParams["query"], !query.isEmpty else {
 				return .error("Missing required parameter: query", status: .badRequest)
 			}
@@ -430,7 +430,7 @@ public enum UserDefaultsEndpoints {
 				"count": results.count,
 				"results": results,
 			])
-		}
+		})
 	}
 
 	// MARK: - Suites
@@ -440,7 +440,7 @@ public enum UserDefaultsEndpoints {
 			"/suites",
 			description: "List known UserDefaults suites. Shows standard suite and any accessible app group containers.",
 			runsOnMainThread: false
-		) { _ in
+		, handler: { _ in
 			var suites: [[String: Any]] = []
 
 			// Standard suite
@@ -470,7 +470,7 @@ public enum UserDefaultsEndpoints {
 				"suites": suites,
 				"note": "Use the 'suite' parameter with other endpoints to access different suites",
 			])
-		}
+		})
 	}
 
 	// MARK: - Domains
@@ -480,7 +480,7 @@ public enum UserDefaultsEndpoints {
 			"/domains",
 			description: "List known persistent domains. Shows the app's bundle domain and any detected domains.",
 			runsOnMainThread: false
-		) { _ in
+		, handler: { _ in
 			var domainInfo: [[String: Any]] = []
 
 			// Add app bundle domain
@@ -531,7 +531,7 @@ public enum UserDefaultsEndpoints {
 				"domains": domainInfo,
 				"note": "Use /domain?name=<domain> to view contents of a specific domain",
 			])
-		}
+		})
 	}
 
 	// MARK: - Domain
@@ -554,7 +554,7 @@ public enum UserDefaultsEndpoints {
 				),
 			],
 			runsOnMainThread: false
-		) { request in
+		, handler: { request in
 			guard let name: String = request.queryParams["name"] else {
 				return .error("Missing required parameter: name", status: .badRequest)
 			}
@@ -591,7 +591,7 @@ public enum UserDefaultsEndpoints {
 				"count": items.count,
 				"items": items,
 			])
-		}
+		})
 	}
 
 	// MARK: - Volatile
@@ -601,7 +601,7 @@ public enum UserDefaultsEndpoints {
 			"/volatile",
 			description: "List volatile domain names. Volatile domains contain temporary values that are not persisted to disk.",
 			runsOnMainThread: false
-		) { _ in
+		, handler: { _ in
 			let defaults: UserDefaults = .standard
 			let volatileNames: [String] = defaults.volatileDomainNames
 
@@ -622,7 +622,7 @@ public enum UserDefaultsEndpoints {
 				"volatileDomains": domains,
 				"note": "Volatile domains contain temporary values not persisted to disk",
 			])
-		}
+		})
 	}
 
 	// MARK: - Types
@@ -646,7 +646,7 @@ public enum UserDefaultsEndpoints {
 				),
 			],
 			runsOnMainThread: false
-		) { request in
+		, handler: { request in
 			let defaults: UserDefaults = self.getDefaults(suite: request.queryParams["suite"])
 			let filterSystem: Bool = request.queryParams["filterSystem"] != "false"
 
@@ -689,6 +689,6 @@ public enum UserDefaultsEndpoints {
 				"summary": summary,
 				"byType": typeGroups,
 			])
-		}
+		})
 	}
 }

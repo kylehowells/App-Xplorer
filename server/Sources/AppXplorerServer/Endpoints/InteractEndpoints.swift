@@ -12,9 +12,9 @@ public enum InteractEndpoints {
 		let router: RequestHandler = .init(description: "Interact with UI elements: tap buttons, type text, scroll views, and trigger gestures")
 
 		// Register index for this sub-router
-		router.register("/", description: "List all interaction endpoints") { _ in
+		router.register("/", description: "List all interaction endpoints", handler: { _ in
 			return .json(router.routerInfo(deep: true))
-		}
+		})
 
 		self.registerTap(with: router)
 		self.registerType(with: router)
@@ -43,7 +43,7 @@ public enum InteractEndpoints {
 					examples: ["0x12345678"]
 				),
 			]
-		) { request in
+		, handler: { request in
 			#if canImport(UIKit)
 				guard let addressString = request.queryParams["address"] else {
 					return .error("Missing required parameter: address", status: .badRequest)
@@ -127,7 +127,7 @@ public enum InteractEndpoints {
 			#else
 				return .error("UI interaction is only available on iOS/tvOS", status: .badRequest)
 			#endif
-		}
+		})
 	}
 
 	// MARK: - Type Text
@@ -157,7 +157,7 @@ public enum InteractEndpoints {
 					examples: ["append", "replace", "insert"]
 				),
 			]
-		) { request in
+		, handler: { request in
 			#if canImport(UIKit)
 				guard let text = request.queryParams["text"] else {
 					return .error("Missing required parameter: text", status: .badRequest)
@@ -307,7 +307,7 @@ public enum InteractEndpoints {
 			#else
 				return .error("UI interaction is only available on iOS/tvOS", status: .badRequest)
 			#endif
-		}
+		})
 	}
 
 	// MARK: - Focus
@@ -324,7 +324,7 @@ public enum InteractEndpoints {
 					examples: ["0x12345678"]
 				),
 			]
-		) { request in
+		, handler: { request in
 			#if canImport(UIKit)
 				guard let addressString = request.queryParams["address"] else {
 					return .error("Missing required parameter: address", status: .badRequest)
@@ -362,7 +362,7 @@ public enum InteractEndpoints {
 			#else
 				return .error("UI interaction is only available on iOS/tvOS", status: .badRequest)
 			#endif
-		}
+		})
 	}
 
 	// MARK: - Resign
@@ -379,7 +379,7 @@ public enum InteractEndpoints {
 					examples: ["0x12345678"]
 				),
 			]
-		) { request in
+		, handler: { request in
 			#if canImport(UIKit)
 				var targetResponder: UIResponder?
 
@@ -423,7 +423,7 @@ public enum InteractEndpoints {
 			#else
 				return .error("UI interaction is only available on iOS/tvOS", status: .badRequest)
 			#endif
-		}
+		})
 	}
 
 	// MARK: - Scroll
@@ -472,7 +472,7 @@ public enum InteractEndpoints {
 					examples: ["top", "bottom"]
 				),
 			]
-		) { request in
+		, handler: { request in
 			#if canImport(UIKit)
 				guard let addressString = request.queryParams["address"] else {
 					return .error("Missing required parameter: address", status: .badRequest)
@@ -577,7 +577,7 @@ public enum InteractEndpoints {
 			#else
 				return .error("UI interaction is only available on iOS/tvOS", status: .badRequest)
 			#endif
-		}
+		})
 	}
 
 	// MARK: - Swipe
@@ -600,7 +600,7 @@ public enum InteractEndpoints {
 					examples: ["left", "right", "up", "down"]
 				),
 			]
-		) { request in
+		, handler: { request in
 			#if canImport(UIKit)
 				guard let addressString = request.queryParams["address"] else {
 					return .error("Missing required parameter: address", status: .badRequest)
@@ -683,7 +683,7 @@ public enum InteractEndpoints {
 			#else
 				return .error("UI interaction is only available on iOS/tvOS", status: .badRequest)
 			#endif
-		}
+		})
 	}
 
 	// MARK: - Accessibility Actions
@@ -706,7 +706,7 @@ public enum InteractEndpoints {
 					examples: ["activate", "increment", "decrement", "escape", "magicTap"]
 				),
 			]
-		) { request in
+		, handler: { request in
 			#if canImport(UIKit)
 				guard let addressString = request.queryParams["address"] else {
 					return .error("Missing required parameter: address", status: .badRequest)
@@ -799,7 +799,7 @@ public enum InteractEndpoints {
 			#else
 				return .error("UI interaction is only available on iOS/tvOS", status: .badRequest)
 			#endif
-		}
+		})
 	}
 
 	// MARK: - Select Cell
@@ -849,7 +849,7 @@ public enum InteractEndpoints {
 					examples: ["true", "false"]
 				),
 			]
-		) { request in
+		, handler: { request in
 			#if canImport(UIKit)
 				guard let addressString = request.queryParams["address"] else {
 					return .error("Missing required parameter: address", status: .badRequest)
@@ -982,7 +982,7 @@ public enum InteractEndpoints {
 			#else
 				return .error("UI interaction is only available on iOS/tvOS", status: .badRequest)
 			#endif
-		}
+		})
 	}
 
 	// MARK: - Menu
@@ -1018,7 +1018,7 @@ public enum InteractEndpoints {
 					examples: ["Copy", "Delete", "Share"]
 				),
 			]
-		) { request in
+		, handler: { request in
 			#if canImport(UIKit)
 				guard let addressString = request.queryParams["address"] else {
 					return .error("Missing required parameter: address", status: .badRequest)
@@ -1221,7 +1221,7 @@ public enum InteractEndpoints {
 			#else
 				return .error("UI interaction is only available on iOS/tvOS", status: .badRequest)
 			#endif
-		}
+		})
 	}
 
 	#if canImport(UIKit)

@@ -45,9 +45,9 @@ public enum PermissionsEndpoints {
 		let router: RequestHandler = .init(description: "Inspect system permission states")
 
 		// Register index for this sub-router
-		router.register("/", description: "List all permissions endpoints", runsOnMainThread: true) { _ in
+		router.register("/", description: "List all permissions endpoints", runsOnMainThread: true, handler: { _ in
 			return .json(router.routerInfo(deep: true))
-		}
+		})
 
 		self.registerAll(with: router)
 		self.registerList(with: router)
@@ -818,7 +818,7 @@ public enum PermissionsEndpoints {
 			"/all",
 			description: "Get all permission states. Sync permissions are checked live; async permissions (notifications, siri) return cached last-known values. Call /permissions/refresh first to update cached values.",
 			runsOnMainThread: true
-		) { _ in
+		, handler: { _ in
 			var permissions: [[String: Any]] = []
 
 			for type in PermissionType.allCases {
@@ -846,7 +846,7 @@ public enum PermissionsEndpoints {
 				"timestamp": ISO8601DateFormatter().string(from: Date()),
 				"asyncNeedingRefresh": asyncNeedingRefresh,
 			])
-		}
+		})
 	}
 
 	private static func registerList(with handler: RequestHandler) {
@@ -854,7 +854,7 @@ public enum PermissionsEndpoints {
 			"/list",
 			description: "List all supported permission types. Returns the type identifiers and display names without checking status.",
 			runsOnMainThread: false
-		) { _ in
+		, handler: { _ in
 			var types: [[String: Any]] = []
 
 			for type in PermissionType.allCases {
@@ -872,7 +872,7 @@ public enum PermissionsEndpoints {
 				"types": types,
 				"note": "Use /permissions/refresh to trigger async permission checks, then /permissions/all to read results",
 			])
-		}
+		})
 	}
 
 	private static func registerGet(with handler: RequestHandler) {
@@ -888,7 +888,7 @@ public enum PermissionsEndpoints {
 				),
 			],
 			runsOnMainThread: true
-		) { request in
+		, handler: { request in
 			guard let typeString: String = request.queryParams["type"] else {
 				return .error("Missing required parameter: type", status: .badRequest)
 			}
@@ -902,7 +902,7 @@ public enum PermissionsEndpoints {
 			status["timestamp"] = ISO8601DateFormatter().string(from: Date())
 
 			return .json(status)
-		}
+		})
 	}
 
 	private static func registerRefresh(with handler: RequestHandler) {
@@ -910,7 +910,7 @@ public enum PermissionsEndpoints {
 			"/refresh",
 			description: "Trigger fresh async permission checks and update cached values. Async permissions (notifications, siri) are checked in the background. Call /permissions/all or /permissions/get after a short delay to read the updated cached results.",
 			runsOnMainThread: true
-		) { _ in
+		, handler: { _ in
 			// Trigger all async checks
 			self.refreshAsyncPermissions()
 
@@ -930,6 +930,6 @@ public enum PermissionsEndpoints {
 				"note": "Call /permissions/all after a short delay to see updated results",
 				"timestamp": ISO8601DateFormatter().string(from: Date()),
 			])
-		}
+		})
 	}
 }

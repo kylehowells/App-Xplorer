@@ -12,9 +12,9 @@ public enum HierarchyEndpoints {
 		let router: RequestHandler = .init(description: "Inspect UIKit view hierarchy, responder chain, and first responder")
 
 		// Register index for this sub-router
-		router.register("/", description: "List all hierarchy endpoints") { _ in
+		router.register("/", description: "List all hierarchy endpoints", handler: { _ in
 			return .json(router.routerInfo(deep: true))
-		}
+		})
 
 		self.registerHierarchy(with: router)
 		self.registerWindows(with: router)
@@ -75,7 +75,7 @@ public enum HierarchyEndpoints {
 					examples: ["json", "xml"]
 				),
 			]
-		) { request in
+		, handler: { request in
 			#if canImport(UIKit)
 				let windowIndex: Int? = request.queryParams["window"].flatMap({ Int($0) })
 				let maxDepth: Int = request.queryParams["maxDepth"].flatMap({ Int($0) }) ?? 0
@@ -168,7 +168,7 @@ public enum HierarchyEndpoints {
 			#else
 				return .error("Hierarchy inspection is only available on iOS/tvOS", status: .badRequest)
 			#endif
-		}
+		})
 	}
 
 	// MARK: - Windows
@@ -186,7 +186,7 @@ public enum HierarchyEndpoints {
 					examples: ["true", "false"]
 				),
 			]
-		) { request in
+		, handler: { request in
 			#if canImport(UIKit)
 				let includeHidden: Bool = request.queryParams["includeHidden"] == "true"
 
@@ -230,7 +230,7 @@ public enum HierarchyEndpoints {
 			#else
 				return .error("Window inspection is only available on iOS/tvOS", status: .badRequest)
 			#endif
-		}
+		})
 	}
 
 	// MARK: - Window Scenes
@@ -248,7 +248,7 @@ public enum HierarchyEndpoints {
 					examples: ["true", "false"]
 				),
 			]
-		) { request in
+		, handler: { request in
 			#if canImport(UIKit)
 				let includeWindows: Bool = request.queryParams["includeWindows"] != "false"
 
@@ -331,7 +331,7 @@ public enum HierarchyEndpoints {
 			#else
 				return .error("Window scene inspection is only available on iOS/tvOS", status: .badRequest)
 			#endif
-		}
+		})
 	}
 
 	// MARK: - View Controllers
@@ -355,7 +355,7 @@ public enum HierarchyEndpoints {
 					examples: ["5", "10", "0"]
 				),
 			]
-		) { request in
+		, handler: { request in
 			#if canImport(UIKit)
 				let windowIndex: Int? = request.queryParams["window"].flatMap({ Int($0) })
 				let maxDepth: Int = request.queryParams["maxDepth"].flatMap({ Int($0) }) ?? 0
@@ -392,7 +392,7 @@ public enum HierarchyEndpoints {
 			#else
 				return .error("View controller inspection is only available on iOS/tvOS", status: .badRequest)
 			#endif
-		}
+		})
 	}
 
 	// MARK: - Responder Chain
@@ -410,7 +410,7 @@ public enum HierarchyEndpoints {
 					examples: ["first-responder", "0x12345678"]
 				),
 			]
-		) { request in
+		, handler: { request in
 			#if canImport(UIKit)
 				let from: String = request.queryParams["from"] ?? "first-responder"
 
@@ -450,7 +450,7 @@ public enum HierarchyEndpoints {
 			#else
 				return .error("Responder chain inspection is only available on iOS/tvOS", status: .badRequest)
 			#endif
-		}
+		})
 	}
 
 	// MARK: - First Responder
@@ -468,7 +468,7 @@ public enum HierarchyEndpoints {
 					examples: ["true", "false"]
 				),
 			]
-		) { request in
+		, handler: { request in
 			#if canImport(UIKit)
 				let includeProperties: Bool = request.queryParams["includeProperties"] != "false"
 
@@ -542,7 +542,7 @@ public enum HierarchyEndpoints {
 			#else
 				return .error("First responder inspection is only available on iOS/tvOS", status: .badRequest)
 			#endif
-		}
+		})
 	}
 
 	// MARK: - Helper Methods
