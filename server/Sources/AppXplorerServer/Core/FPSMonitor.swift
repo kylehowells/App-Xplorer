@@ -95,18 +95,18 @@ public final class FPSMonitor: @unchecked Sendable {
 	/// Enable FPS monitoring
 	public func enable() {
 		#if canImport(UIKit)
-			DispatchQueue.main.async { [weak self] in
+			DispatchQueue.main.async(execute: { [weak self] in
 				self?.enableOnMainThread()
-			}
+			})
 		#endif
 	}
 
 	/// Disable FPS monitoring
 	public func disable() {
 		#if canImport(UIKit)
-			DispatchQueue.main.async { [weak self] in
+			DispatchQueue.main.async(execute: { [weak self] in
 				self?.disableOnMainThread()
-			}
+			})
 		#endif
 	}
 
@@ -183,7 +183,7 @@ public final class FPSMonitor: @unchecked Sendable {
 		if self.currentBucketFrames.isEmpty { return }
 
 		// Sort by timestamp
-		self.currentBucketFrames.sort { $0.timestamp < $1.timestamp }
+		self.currentBucketFrames.sort(by: { $0.timestamp < $1.timestamp })
 
 		// Initialize bucket start if needed
 		if self.currentBucketStart == 0, !self.currentBucketFrames.isEmpty {
@@ -222,7 +222,7 @@ public final class FPSMonitor: @unchecked Sendable {
 	}
 
 	private func createBucket(from frames: [FrameTime], start: TimeInterval, end: TimeInterval) -> HistoryBucket {
-		let totalDuration = frames.reduce(0.0) { $0 + $1.duration }
+		let totalDuration = frames.reduce(0.0, { $0 + $1.duration })
 		let avgDuration = totalDuration / Double(frames.count)
 
 		var minFrame = frames[0]
@@ -260,7 +260,7 @@ public final class FPSMonitor: @unchecked Sendable {
 		let currentFPS: Double
 		if self.recentFrames.count >= 10 {
 			let lastFrames = self.recentFrames.suffix(10)
-			let avgDuration = lastFrames.reduce(0.0) { $0 + $1.duration } / Double(lastFrames.count)
+			let avgDuration = lastFrames.reduce(0.0, { $0 + $1.duration }) / Double(lastFrames.count)
 			currentFPS = avgDuration > 0 ? 1.0 / avgDuration : 0
 		}
 		else if let last = recentFrames.last {
@@ -298,18 +298,18 @@ public final class FPSMonitor: @unchecked Sendable {
 
 		// Apply time filters
 		if let startTime = start {
-			frames = frames.filter { $0.timestamp >= startTime }
+			frames = frames.filter({ $0.timestamp >= startTime })
 		}
 		if let endTime = end {
-			frames = frames.filter { $0.timestamp <= endTime }
+			frames = frames.filter({ $0.timestamp <= endTime })
 		}
 
 		// Sort
 		if ascending {
-			frames.sort { $0.timestamp < $1.timestamp }
+			frames.sort(by: { $0.timestamp < $1.timestamp })
 		}
 		else {
-			frames.sort { $0.timestamp > $1.timestamp }
+			frames.sort(by: { $0.timestamp > $1.timestamp })
 		}
 
 		// Apply count limit
@@ -334,18 +334,18 @@ public final class FPSMonitor: @unchecked Sendable {
 
 		// Apply time filters
 		if let startTime = start {
-			buckets = buckets.filter { $0.bucketEnd >= startTime }
+			buckets = buckets.filter({ $0.bucketEnd >= startTime })
 		}
 		if let endTime = end {
-			buckets = buckets.filter { $0.bucketStart <= endTime }
+			buckets = buckets.filter({ $0.bucketStart <= endTime })
 		}
 
 		// Sort
 		if ascending {
-			buckets.sort { $0.bucketStart < $1.bucketStart }
+			buckets.sort(by: { $0.bucketStart < $1.bucketStart })
 		}
 		else {
-			buckets.sort { $0.bucketStart > $1.bucketStart }
+			buckets.sort(by: { $0.bucketStart > $1.bucketStart })
 		}
 
 		// Apply count limit

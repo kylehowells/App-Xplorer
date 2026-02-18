@@ -120,12 +120,12 @@ public enum FPSEndpoints {
 			],
 			runsOnMainThread: false
 		) { request in
-			let count = request.queryParams["count"].flatMap { Int($0) }
+			let count = request.queryParams["count"].flatMap({ Int($0) })
 			let ascending = request.queryParams["order"] == "asc"
 
 			// Handle time range
-			var start: TimeInterval? = request.queryParams["start"].flatMap { Double($0) }
-			let end: TimeInterval? = request.queryParams["end"].flatMap { Double($0) }
+			var start: TimeInterval? = request.queryParams["start"].flatMap({ Double($0) })
+			let end: TimeInterval? = request.queryParams["end"].flatMap({ Double($0) })
 
 			// Get current time for relative calculations
 			let currentTime = self.getCurrentTime()
@@ -156,7 +156,7 @@ public enum FPSEndpoints {
 				]
 			}
 			else {
-				let durations = frames.map { $0.duration }
+				let durations = frames.map({ $0.duration })
 				let avgDuration = durations.reduce(0, +) / Double(durations.count)
 				let minDuration = durations.min() ?? 0
 				let maxDuration = durations.max() ?? 0
@@ -175,13 +175,13 @@ public enum FPSEndpoints {
 
 			return .json([
 				"summary": summary,
-				"frames": frames.map { frame in
+				"frames": frames.map({ frame in
 					[
 						"timestamp": frame.timestamp,
 						"duration": frame.duration,
 						"fps": frame.fps,
 					]
-				},
+				}),
 			])
 		}
 	}
@@ -221,9 +221,9 @@ public enum FPSEndpoints {
 			],
 			runsOnMainThread: false
 		) { request in
-			let count = request.queryParams["count"].flatMap { Int($0) }
-			let start = request.queryParams["start"].flatMap { Double($0) }
-			let end = request.queryParams["end"].flatMap { Double($0) }
+			let count = request.queryParams["count"].flatMap({ Int($0) })
+			let start = request.queryParams["start"].flatMap({ Double($0) })
+			let end = request.queryParams["end"].flatMap({ Double($0) })
 			let ascending = request.queryParams["order"] == "asc"
 
 			let buckets = FPSMonitor.shared.getHistoryBuckets(
@@ -242,8 +242,8 @@ public enum FPSEndpoints {
 				]
 			}
 			else {
-				let totalFrames = buckets.reduce(0) { $0 + $1.frameCount }
-				let avgFPS = buckets.reduce(0.0) { $0 + $1.averageFPS } / Double(buckets.count)
+				let totalFrames = buckets.reduce(0, { $0 + $1.frameCount })
+				let avgFPS = buckets.reduce(0.0, { $0 + $1.averageFPS }) / Double(buckets.count)
 
 				// Find global min/max
 				var globalMinTime = buckets[0].minFrameTime
@@ -276,7 +276,7 @@ public enum FPSEndpoints {
 
 			return .json([
 				"summary": summary,
-				"buckets": buckets.map { bucket in
+				"buckets": buckets.map({ bucket in
 					[
 						"bucketStart": bucket.bucketStart,
 						"bucketEnd": bucket.bucketEnd,
@@ -288,7 +288,7 @@ public enum FPSEndpoints {
 						"maxFrameTime": bucket.maxFrameTime,
 						"maxFrameTimestamp": bucket.maxFrameTimestamp,
 					]
-				},
+				}),
 			])
 		}
 	}

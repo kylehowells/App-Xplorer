@@ -82,24 +82,24 @@ public class HTTPTransportAdapter: TransportAdapter {
 
 		switch response.status {
 			case .ok:
-				return .raw(200, "OK", ["Content-Type": contentType]) { writer in
+				return .raw(200, "OK", ["Content-Type": contentType], { writer in
 					try writer.write(response.body)
-				}
+				})
 
 			case .badRequest:
-				return .raw(400, "Bad Request", ["Content-Type": contentType]) { writer in
+				return .raw(400, "Bad Request", ["Content-Type": contentType], { writer in
 					try writer.write(response.body)
-				}
+				})
 
 			case .notFound:
-				return .raw(404, "Not Found", ["Content-Type": contentType]) { writer in
+				return .raw(404, "Not Found", ["Content-Type": contentType], { writer in
 					try writer.write(response.body)
-				}
+				})
 
 			case .internalError:
-				return .raw(500, "Internal Server Error", ["Content-Type": contentType]) { writer in
+				return .raw(500, "Internal Server Error", ["Content-Type": contentType], { writer in
 					try writer.write(response.body)
-				}
+				})
 		}
 	}
 }

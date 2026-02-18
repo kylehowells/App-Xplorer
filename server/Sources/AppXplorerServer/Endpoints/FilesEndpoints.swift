@@ -276,8 +276,8 @@ public enum FilesEndpoints {
 			let path: String = self.resolvePath(pathParam)
 			let sortBy: String = request.queryParams["sort"] ?? "name"
 			let order: String = request.queryParams["order"] ?? "asc"
-			let limit: Int? = request.queryParams["limit"].flatMap { Int($0) }
-			let offset: Int = request.queryParams["offset"].flatMap { Int($0) } ?? 0
+			let limit: Int? = request.queryParams["limit"].flatMap({ Int($0) })
+			let offset: Int = request.queryParams["offset"].flatMap({ Int($0) }) ?? 0
 
 			let fileManager: FileManager = .default
 			var isDirectory: ObjCBool = false
@@ -317,7 +317,7 @@ public enum FilesEndpoints {
 
 				// Sort items
 				let ascending: Bool = order.lowercased() != "desc"
-				items.sort { a, b in
+				items.sort(by: { a, b in
 					switch sortBy.lowercased() {
 						case "size":
 							let sizeA: Int = (a["size"] as? Int) ?? 0
@@ -335,7 +335,7 @@ public enum FilesEndpoints {
 							return ascending ? nameA.localizedCaseInsensitiveCompare(nameB) == .orderedAscending
 								: nameA.localizedCaseInsensitiveCompare(nameB) == .orderedDescending
 					}
-				}
+				})
 
 				// Apply pagination
 				let totalCount: Int = items.count
@@ -555,7 +555,7 @@ public enum FilesEndpoints {
 			}
 
 			let path: String = self.resolvePath(pathParam)
-			let lineCount: Int = request.queryParams["lines"].flatMap { Int($0) } ?? 10
+			let lineCount: Int = request.queryParams["lines"].flatMap({ Int($0) }) ?? 10
 			let encoding: String = request.queryParams["encoding"] ?? "utf8"
 
 			let fileManager: FileManager = .default
@@ -627,7 +627,7 @@ public enum FilesEndpoints {
 			}
 
 			let path: String = self.resolvePath(pathParam)
-			let lineCount: Int = request.queryParams["lines"].flatMap { Int($0) } ?? 10
+			let lineCount: Int = request.queryParams["lines"].flatMap({ Int($0) }) ?? 10
 			let encoding: String = request.queryParams["encoding"] ?? "utf8"
 
 			let fileManager: FileManager = .default

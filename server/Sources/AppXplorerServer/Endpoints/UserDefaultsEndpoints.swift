@@ -50,7 +50,7 @@ public enum UserDefaultsEndpoints {
 	/// Filter keys based on filterSystem flag
 	private static func filterKeys(_ dict: [String: Any], filterSystem: Bool) -> [String: Any] {
 		if filterSystem {
-			return dict.filter { key, _ in !self.isSystemKey(key) }
+			return dict.filter({ key, _ in !self.isSystemKey(key) })
 		}
 		return dict
 	}
@@ -104,10 +104,10 @@ public enum UserDefaultsEndpoints {
 				]
 
 			case let array as [Any]:
-				return array.map { self.serializeValue($0) }
+				return array.map({ self.serializeValue($0) })
 
 			case let dict as [String: Any]:
-				return dict.mapValues { self.serializeValue($0) }
+				return dict.mapValues({ self.serializeValue($0) })
 
 			default:
 				return value
@@ -116,7 +116,7 @@ public enum UserDefaultsEndpoints {
 
 	/// Serialize an entire dictionary for JSON output
 	private static func serializeDict(_ dict: [String: Any]) -> [String: Any] {
-		return dict.mapValues { self.serializeValue($0) }
+		return dict.mapValues({ self.serializeValue($0) })
 	}
 
 	// MARK: - All
@@ -286,17 +286,17 @@ public enum UserDefaultsEndpoints {
 
 			// Filter system keys
 			if filterSystem {
-				keys = keys.filter { !self.isSystemKey($0) }
+				keys = keys.filter({ !self.isSystemKey($0) })
 			}
 
 			// Filter by prefix
 			if let prefix = prefix, !prefix.isEmpty {
-				keys = keys.filter { $0.hasPrefix(prefix) }
+				keys = keys.filter({ $0.hasPrefix(prefix) })
 			}
 
 			// Filter by contains
 			if let contains = contains, !contains.isEmpty {
-				keys = keys.filter { $0.localizedCaseInsensitiveContains(contains) }
+				keys = keys.filter({ $0.localizedCaseInsensitiveContains(contains) })
 			}
 
 			// Sort
@@ -420,7 +420,7 @@ public enum UserDefaultsEndpoints {
 			}
 
 			// Sort results by key
-			results.sort { ($0["key"] as? String ?? "") < ($1["key"] as? String ?? "") }
+			results.sort(by: { ($0["key"] as? String ?? "") < ($1["key"] as? String ?? "") })
 
 			return .json([
 				"query": query,
@@ -615,7 +615,7 @@ public enum UserDefaultsEndpoints {
 			}
 
 			// Sort by name
-			domains.sort { ($0["name"] as? String ?? "") < ($1["name"] as? String ?? "") }
+			domains.sort(by: { ($0["name"] as? String ?? "") < ($1["name"] as? String ?? "") })
 
 			return .json([
 				"count": domains.count,
@@ -671,7 +671,7 @@ public enum UserDefaultsEndpoints {
 
 			// Sort keys within each group
 			for type in typeGroups.keys {
-				typeGroups[type]?.sort { ($0["key"] as? String ?? "") < ($1["key"] as? String ?? "") }
+				typeGroups[type]?.sort(by: { ($0["key"] as? String ?? "") < ($1["key"] as? String ?? "") })
 			}
 
 			// Build summary

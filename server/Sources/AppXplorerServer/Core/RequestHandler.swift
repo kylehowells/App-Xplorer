@@ -278,10 +278,10 @@ public final class RequestHandler: @unchecked Sendable {
 		let handler: RouteHandler = routeInfo.handler
 		let req: Request = request
 
-		DispatchQueue.main.async {
+		DispatchQueue.main.async(execute: {
 			responseBox.value = handler(req)
 			semaphore.signal()
-		}
+		})
 
 		// Wait with timeout to prevent deadlocks
 		let result: DispatchTimeoutResult = semaphore.wait(timeout: .now() + 30.0)
@@ -301,30 +301,30 @@ public final class RequestHandler: @unchecked Sendable {
 		// Always include this router's own endpoints
 		let endpoints: [EndpointInfo] = self.routes
 			.values
-			.sorted { $0.path < $1.path }
-			.map { EndpointInfo(
+			.sorted(by: { $0.path < $1.path })
+			.map({ EndpointInfo(
 				path: $0.path,
 				description: $0.description,
 				parameters: $0.parameters.isEmpty ? nil : $0.parameters
-			) }
+			) })
 
 		let routers: [RouterInfo]?
 
 		if deep {
 			// Deep: recursively include full sub-router info with their endpoints
 			routers = self.subRouters
-				.sorted { $0.key < $1.key }
-				.map { $0.value.routerInfo(deep: true) }
+				.sorted(by: { $0.key < $1.key })
+				.map({ $0.value.routerInfo(deep: true) })
 		}
 		else {
 			// Shallow: only show sub-router summaries (path, description, count)
 			routers = self.subRouters.isEmpty ? nil : self.subRouters
-				.sorted { $0.key < $1.key }
-				.map { RouterInfo(
+				.sorted(by: { $0.key < $1.key })
+				.map({ RouterInfo(
 					path: $0.value.basePath,
 					description: $0.value.description,
 					endpointCount: $0.value.totalEndpointCount
-				) }
+				) })
 		}
 
 		return RouterInfo(
@@ -339,7 +339,7 @@ public final class RequestHandler: @unchecked Sendable {
 	/// Get total count of endpoints including sub-routers
 	public var totalEndpointCount: Int {
 		let localCount: Int = self.routes.count
-		let subCount: Int = self.subRouters.values.reduce(0) { $0 + $1.totalEndpointCount }
+		let subCount: Int = self.subRouters.values.reduce(0, { $0 + $1.totalEndpointCount })
 		return localCount + subCount
 	}
 
@@ -354,11 +354,11 @@ public final class RequestHandler: @unchecked Sendable {
 	public var endpointInfos: [EndpointInfo] {
 		return self.routes
 			.values
-			.sorted { $0.path < $1.path }
-			.map { EndpointInfo(
+			.sorted(by: { $0.path < $1.path })
+			.map({ EndpointInfo(
 				path: $0.path,
 				description: $0.description,
 				parameters: $0.parameters.isEmpty ? nil : $0.parameters
-			) }
+			) })
 	}
 }

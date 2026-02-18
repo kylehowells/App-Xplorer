@@ -119,7 +119,7 @@ public enum LogEndpoints {
 
 			if format.lowercased() == "json" {
 				// Return as JSON array
-				let jsonEntries: [[String: Any]] = entries.map { entry in
+				let jsonEntries: [[String: Any]] = entries.map({ entry in
 					var obj: [String: Any] = [
 						"id": entry.id,
 						"time": self.isoFormatter.string(from: entry.timestamp),
@@ -129,7 +129,7 @@ public enum LogEndpoints {
 						obj["type"] = entry.type
 					}
 					return obj
-				}
+				})
 				return .json([
 					"count": entries.count,
 					"total": LogStore.shared.count(),

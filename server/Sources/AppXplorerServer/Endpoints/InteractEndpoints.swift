@@ -1053,7 +1053,7 @@ public enum InteractEndpoints {
 				// Also check for context menu interaction
 				var contextMenuInteraction: UIContextMenuInteraction?
 				if let interactions = view.interactions as? [UIInteraction] {
-					contextMenuInteraction = interactions.compactMap { $0 as? UIContextMenuInteraction }.first
+					contextMenuInteraction = interactions.compactMap({ $0 as? UIContextMenuInteraction }).first
 				}
 
 				result["hasContextMenuInteraction"] = contextMenuInteraction != nil
@@ -1160,7 +1160,7 @@ public enum InteractEndpoints {
 
 						if let indexPath = request.queryParams["index"] {
 							// Parse index path (e.g., "0", "1.2", "0.1.3")
-							let indices = indexPath.split(separator: ".").compactMap { Int($0) }
+							let indices = indexPath.split(separator: ".").compactMap({ Int($0) })
 							if indices.isEmpty {
 								return .error("Invalid index format: \(indexPath)", status: .badRequest)
 							}
@@ -1335,7 +1335,7 @@ public enum InteractEndpoints {
 
 	#if canImport(UIKit)
 		private static func findFirstResponder() -> UIResponder? {
-			let scenes = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+			let scenes = UIApplication.shared.connectedScenes.compactMap({ $0 as? UIWindowScene })
 
 			for scene in scenes {
 				for window in scene.windows {

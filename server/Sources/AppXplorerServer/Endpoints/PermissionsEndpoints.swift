@@ -433,7 +433,7 @@ public enum PermissionsEndpoints {
 
 		// Use DispatchQueue to catch any potential crashes/exceptions
 		// by running in a separate context
-		DispatchQueue.global(qos: .userInitiated).async {
+		DispatchQueue.global(qos: .userInitiated).async(execute: {
 			// We'll attempt the call and handle failure via the cache
 			// Note: This doesn't catch ObjC exceptions, but the NSSiriUsageDescription check
 			// should prevent most cases
@@ -455,10 +455,10 @@ public enum PermissionsEndpoints {
 				default: status = .unknown
 			}
 
-			DispatchQueue.main.async {
+			DispatchQueue.main.async(execute: {
 				self.setCachedPermission(CachedPermission(status: status), for: .siri)
-			}
-		}
+			})
+		})
 	}
 
 	// MARK: - Individual Permission Checks (Sync)
@@ -835,10 +835,9 @@ public enum PermissionsEndpoints {
 			}
 
 			// Count async permissions that need refresh
-			let asyncNeedingRefresh: Int = permissions.filter {
+			let asyncNeedingRefresh: Int = permissions.filter({
 				($0["isAsync"] as? Bool == true) && ($0["status"] as? String == "not_checked")
-			}
-			.count
+			}).count
 
 			return .json([
 				"count": permissions.count,
@@ -885,7 +884,7 @@ public enum PermissionsEndpoints {
 					name: "type",
 					description: "Permission type to check",
 					required: true,
-					examples: PermissionType.allCases.map { $0.rawValue }
+					examples: PermissionType.allCases.map({ $0.rawValue })
 				),
 			],
 			runsOnMainThread: true
@@ -895,7 +894,7 @@ public enum PermissionsEndpoints {
 			}
 
 			guard let type = PermissionType(rawValue: typeString.lowercased()) else {
-				let validTypes: String = PermissionType.allCases.map { $0.rawValue }.joined(separator: ", ")
+				let validTypes: String = PermissionType.allCases.map({ $0.rawValue }).joined(separator: ", ")
 				return .error("Invalid permission type '\(typeString)'. Valid types: \(validTypes)", status: .badRequest)
 			}
 

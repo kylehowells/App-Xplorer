@@ -16,7 +16,7 @@ public class AppXplorerServer {
 
 	/// Whether any transport is running
 	public var isRunning: Bool {
-		return self.transports.contains { $0.isRunning }
+		return self.transports.contains(where: { $0.isRunning })
 	}
 
 	public init() {
@@ -35,7 +35,7 @@ public class AppXplorerServer {
 	/// Remove a transport adapter
 	public func removeTransport(_ transport: TransportAdapter) {
 		transport.stop()
-		self.transports.removeAll { $0 === transport }
+		self.transports.removeAll(where: { $0 === transport })
 	}
 
 	// MARK: - Server Control

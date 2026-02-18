@@ -77,8 +77,8 @@ public enum HierarchyEndpoints {
 			]
 		) { request in
 			#if canImport(UIKit)
-				let windowIndex: Int? = request.queryParams["window"].flatMap { Int($0) }
-				let maxDepth: Int = request.queryParams["maxDepth"].flatMap { Int($0) } ?? 0
+				let windowIndex: Int? = request.queryParams["window"].flatMap({ Int($0) })
+				let maxDepth: Int = request.queryParams["maxDepth"].flatMap({ Int($0) }) ?? 0
 				let includeHidden: Bool = request.queryParams["includeHidden"] == "true"
 				let includePrivate: Bool = request.queryParams["includePrivate"] != "false"
 				let properties: String = request.queryParams["properties"] ?? "standard"
@@ -254,7 +254,7 @@ public enum HierarchyEndpoints {
 
 				let scenes: [UIWindowScene] = UIApplication.shared
 					.connectedScenes
-					.compactMap { $0 as? UIWindowScene }
+					.compactMap({ $0 as? UIWindowScene })
 
 				var result: [[String: Any]] = []
 
@@ -311,7 +311,7 @@ public enum HierarchyEndpoints {
 								"windowLevel": window.windowLevel.rawValue,
 								"isHidden": window.isHidden,
 								"isKeyWindow": window.isKeyWindow,
-								"rootViewController": window.rootViewController.map { String(describing: type(of: $0)) } ?? "none",
+								"rootViewController": window.rootViewController.map({ String(describing: type(of: $0)) }) ?? "none",
 							])
 						}
 						sceneInfo["windowCount"] = scene.windows.count
@@ -357,8 +357,8 @@ public enum HierarchyEndpoints {
 			]
 		) { request in
 			#if canImport(UIKit)
-				let windowIndex: Int? = request.queryParams["window"].flatMap { Int($0) }
-				let maxDepth: Int = request.queryParams["maxDepth"].flatMap { Int($0) } ?? 0
+				let windowIndex: Int? = request.queryParams["window"].flatMap({ Int($0) })
+				let maxDepth: Int = request.queryParams["maxDepth"].flatMap({ Int($0) }) ?? 0
 
 				let windows: [UIWindow] = self.getAllWindows()
 
@@ -551,14 +551,14 @@ public enum HierarchyEndpoints {
 		private static func getAllWindows() -> [UIWindow] {
 			let scenes: [UIWindowScene] = UIApplication.shared
 				.connectedScenes
-				.compactMap { $0 as? UIWindowScene }
+				.compactMap({ $0 as? UIWindowScene })
 
 			var allWindows: [UIWindow] = []
 			for scene in scenes {
 				allWindows.append(contentsOf: scene.windows)
 			}
 
-			return allWindows.sorted { $0.windowLevel.rawValue < $1.windowLevel.rawValue }
+			return allWindows.sorted(by: { $0.windowLevel.rawValue < $1.windowLevel.rawValue })
 		}
 
 		private static func findFirstResponder() -> UIResponder? {
@@ -619,6 +619,7 @@ public enum HierarchyEndpoints {
 				}
 
 				if properties == "full" {
+					info["description"] = view.description
 					info["bounds"] = self.frameToDict(view.bounds)
 					info["backgroundColor"] = self.colorToString(view.backgroundColor)
 					info["clipsToBounds"] = view.clipsToBounds
@@ -844,6 +845,7 @@ public enum HierarchyEndpoints {
 				"class": String(describing: type(of: vc)),
 				"address": String(format: "0x%lx", unsafeBitCast(vc, to: Int.self)),
 				"title": vc.title ?? "",
+				"description": vc.description,
 				"isViewLoaded": vc.isViewLoaded,
 			]
 
@@ -870,9 +872,9 @@ public enum HierarchyEndpoints {
 			if let navVC = vc as? UINavigationController {
 				info["viewControllerCount"] = navVC.viewControllers.count
 				if maxDepth == 0 || depth < maxDepth {
-					info["viewControllers"] = navVC.viewControllers.map {
+					info["viewControllers"] = navVC.viewControllers.map({
 						self.serializeViewController($0, depth: depth + 1, maxDepth: maxDepth)
-					}
+					})
 				}
 			}
 
@@ -882,9 +884,9 @@ public enum HierarchyEndpoints {
 				if let viewControllers = tabVC.viewControllers {
 					info["tabCount"] = viewControllers.count
 					if maxDepth == 0 || depth < maxDepth {
-						info["tabs"] = viewControllers.map {
+						info["tabs"] = viewControllers.map({
 							self.serializeViewController($0, depth: depth + 1, maxDepth: maxDepth)
-						}
+						})
 					}
 				}
 			}

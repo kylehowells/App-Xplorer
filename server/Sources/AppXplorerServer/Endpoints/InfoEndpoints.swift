@@ -128,8 +128,8 @@ public enum InfoEndpoints {
 				// Parse parameters
 				let viewAddress: String? = request.queryParams["view"]
 				let format: String = request.queryParams["format"]?.lowercased() ?? "png"
-				let quality: CGFloat = request.queryParams["quality"].flatMap { Double($0) }.map { CGFloat($0) } ?? 0.9
-				let scale: CGFloat = request.queryParams["scale"].flatMap { Double($0) }.map { CGFloat($0) } ?? 1.0
+				let quality: CGFloat = request.queryParams["quality"].flatMap({ Double($0) }).map({ CGFloat($0) }) ?? 0.9
+				let scale: CGFloat = request.queryParams["scale"].flatMap({ Double($0) }).map({ CGFloat($0) }) ?? 1.0
 				let afterScreenUpdates: Bool = request.queryParams["afterScreenUpdates"] == "true"
 
 				// Validate parameters
@@ -198,12 +198,12 @@ public enum InfoEndpoints {
 			// Filter out system windows that can cause black screenshots when rendered
 			// UITextEffectsWindow is used for keyboard and renders as black/opaque when captured
 			let windows: [UIWindow] = windowScene.windows
-				.filter { window in
+				.filter({ window in
 					let className = String(describing: type(of: window))
 					// Exclude keyboard/text effects windows that cause black screenshots
 					return className != "UITextEffectsWindow"
-				}
-				.sorted { $0.windowLevel.rawValue < $1.windowLevel.rawValue }
+				})
+				.sorted(by: { $0.windowLevel.rawValue < $1.windowLevel.rawValue })
 
 			guard !windows.isEmpty else {
 				return nil
